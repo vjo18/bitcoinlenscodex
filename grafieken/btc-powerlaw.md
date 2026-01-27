@@ -41,10 +41,12 @@ permalink: /grafieken/btc-powerlaw/
 </div>
 
 <div class="btc-pl-controls">
+  {% assign current_year = "now" | date: "%Y" %}
+  {% assign max_projection_year = current_year | plus: 20 %}
   <div class="btc-kpi-card btc-pl-slider-card">
     <div class="btc-kpi-label">Projectie tot jaar</div>
     <div class="btc-pl-slider-row">
-      <div id="projection-year-value" class="btc-kpi-value">–</div>
+      <div id="projection-year-value" class="btc-kpi-value">{{ current_year }}</div>
       <input
         id="projection-year-slider"
         class="btc-pl-slider-input"
@@ -54,7 +56,7 @@ permalink: /grafieken/btc-powerlaw/
         step="1"
       />
     </div>
-    <div id="projection-year-range" class="btc-pl-slider-range">–</div>
+    <div id="projection-year-range" class="btc-pl-slider-range">{{ current_year }} → {{ max_projection_year }}</div>
   </div>
 
   <div class="btc-pl-toggles">
