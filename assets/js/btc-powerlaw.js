@@ -638,10 +638,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   setKpiText(
     "kpi-a-scale",
-    latestFit ? latestFit.aCoef.toExponential(3) : "-"
+    latestFit ? latestFit.aCoef.toExponential(3).replace(".", ",") : "-"
   );
-  setKpiText("kpi-b-exp", latestFit ? latestFit.bExp.toFixed(4) : "-");
-  setKpiText("kpi-r2", latestFit ? latestFit.r2.toFixed(3) : "-");
+  setKpiText("kpi-b-exp", latestFit ? latestFit.bExp.toFixed(4).replace(".", ",") : "-");
+  setKpiText("kpi-r2", latestFit ? latestFit.r2.toFixed(3).replace(".", ",") : "-");
 
   updateTodayKpis(A_AVG, A_LOWER, B_EXP);
 
