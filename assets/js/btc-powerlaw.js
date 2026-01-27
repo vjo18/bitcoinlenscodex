@@ -623,12 +623,20 @@ document.addEventListener("DOMContentLoaded", () => {
   const plAvgToday = pricePLDays(A_AVG, B_EXP, todayIso);
   const plLowerToday = pricePLDays(A_LOWER, B_EXP, todayIso);
   const daysSinceGenesisToday = Math.floor(dToday);
+  const yearsSinceGenesisToday = dToday / 365.25;
 
   setKpiText("kpi-pl-avg", formatMoneyEUR(plAvgToday));
   setKpiText("kpi-pl-support", formatMoneyEUR(plLowerToday));
   setKpiText(
     "kpi-days-genesis",
     daysSinceGenesisToday.toLocaleString("nl-BE")
+  );
+  setKpiText(
+    "kpi-years-genesis",
+    yearsSinceGenesisToday.toLocaleString("nl-BE", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    })
   );
 
   setKpiText(
