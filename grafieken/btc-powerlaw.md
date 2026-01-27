@@ -5,19 +5,9 @@ permalink: /grafieken/btc-powerlaw/
 ---
 
 <p>
-  Deze pagina toont de BTC-prijsgrafiek met power-law banden en de stabiliteit
+  Deze pagina toont de BTC-prijsgrafiek (maandelijkse data) met power-law banden en de stabiliteit
   van de exponent (b) en R² doorheen de tijd.
 </p>
-
-<div class="btc-pl-header">
-  <div>
-    <h2 class="btc-pl-title">BTC Power Law (days since genesis)</h2>
-    <p class="btc-pl-subtitle">
-      2010 → 2054 (log y, tijd op x-as). In log/log hoort dit bijna een rechte lijn te zijn.
-    </p>
-  </div>
-
-</div>
 
 <div class="btc-kpi-row">
   <div class="btc-kpi-card">
