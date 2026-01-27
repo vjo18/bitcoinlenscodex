@@ -515,6 +515,23 @@ async function fetchLiveBtceur() {
 
 // =============== INIT ===============
 
+function updateTodayKpis(A_AVG, A_LOWER, B_EXP) {
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const dToday = daysSinceGenesisFromDateStr(todayIso);
+
+  setKpiText("kpi-pl-avg", formatMoneyEUR(pricePLDays(A_AVG, B_EXP, todayIso)));
+  setKpiText("kpi-pl-support", formatMoneyEUR(pricePLDays(A_LOWER, B_EXP, todayIso)));
+  setKpiText(
+    "kpi-days-genesis",
+    Math.floor(dToday).toLocaleString("nl-BE")
+  );
+  setKpiText(
+    "kpi-years-genesis",
+    (dToday / 365.25).toFixed(2).replace(".", ",")
+  );
+}
+
+
 document.addEventListener("DOMContentLoaded", () => {
 
   if (!btcMonthlyCloses.length) {
@@ -618,26 +635,6 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
 
-  const todayIso = new Date().toISOString().slice(0, 10);
-  const dToday = daysSinceGenesisFromDateStr(todayIso);
-  const plAvgToday = pricePLDays(A_AVG, B_EXP, todayIso);
-  const plLowerToday = pricePLDays(A_LOWER, B_EXP, todayIso);
-  const daysSinceGenesisToday = Math.floor(dToday);
-  const yearsSinceGenesisToday = dToday / 365.25;
-
-  setKpiText("kpi-pl-avg", formatMoneyEUR(plAvgToday));
-  setKpiText("kpi-pl-support", formatMoneyEUR(plLowerToday));
-  setKpiText(
-    "kpi-days-genesis",
-    daysSinceGenesisToday.toLocaleString("nl-BE")
-  );
-  setKpiText(
-    "kpi-years-genesis",
-    yearsSinceGenesisToday.toLocaleString("nl-BE", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    })
-  );
 
   setKpiText(
     "kpi-a-scale",
@@ -645,6 +642,8 @@ document.addEventListener("DOMContentLoaded", () => {
   );
   setKpiText("kpi-b-exp", latestFit ? latestFit.bExp.toFixed(4) : "-");
   setKpiText("kpi-r2", latestFit ? latestFit.r2.toFixed(3) : "-");
+
+  updateTodayKpis(A_AVG, A_LOWER, B_EXP);
 
   // toggle log/linear Y
   if (yLogToggle) {
