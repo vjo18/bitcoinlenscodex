@@ -2,6 +2,8 @@
 // Maandelijkse BTC closes (EUR)
 
 window.btcMonthlyCloses = [
+  { date: "2025-12-31", price: 74473.2 },
+  { date: "2025-11-30", price: 77928.7 },
   { date: "2025-10-31", price: 94886.5 },
   { date: "2025-09-30", price: 97190.7 },
   { date: "2025-08-31", price: 92600.0 },
