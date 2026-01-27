@@ -17,19 +17,6 @@ permalink: /grafieken/btc-powerlaw/
     </p>
   </div>
 
-  <div class="btc-pl-toggles">
-    <label class="btc-toggle">
-      <span class="btc-toggle-label">Y log</span>
-      <input id="toggle-ylog" type="checkbox" checked />
-      <span class="btc-toggle-switch"></span>
-    </label>
-
-    <label class="btc-toggle">
-      <span class="btc-toggle-label">X log</span>
-      <input id="toggle-xlog" type="checkbox" />
-      <span class="btc-toggle-switch"></span>
-    </label>
-  </div>
 </div>
 
 <div class="btc-kpi-row">
@@ -63,7 +50,7 @@ permalink: /grafieken/btc-powerlaw/
   </div>
 </div>
 
-<div class="btc-pl-slider">
+<div class="btc-pl-controls">
   <div class="btc-kpi-card btc-pl-slider-card">
     <div class="btc-kpi-label">Projectie tot jaar</div>
     <div class="btc-pl-slider-row">
@@ -78,6 +65,20 @@ permalink: /grafieken/btc-powerlaw/
       />
     </div>
     <div id="projection-year-range" class="btc-pl-slider-range">–</div>
+  </div>
+
+  <div class="btc-pl-toggles">
+    <label class="btc-toggle">
+      <span class="btc-toggle-label">Y log</span>
+      <input id="toggle-ylog" type="checkbox" checked />
+      <span class="btc-toggle-switch"></span>
+    </label>
+
+    <label class="btc-toggle">
+      <span class="btc-toggle-label">X log</span>
+      <input id="toggle-xlog" type="checkbox" />
+      <span class="btc-toggle-switch"></span>
+    </label>
   </div>
 </div>
 
@@ -130,6 +131,7 @@ permalink: /grafieken/btc-powerlaw/
 
 .btc-pl-header,
 .btc-kpi-row,
+.btc-pl-controls,
 .btc-powerlaw-charts {
   max-width: 1100px;
   margin-inline: auto;
@@ -243,13 +245,20 @@ body[data-theme="dark"] .btc-toggle-switch::after {
   margin: 0 auto 2rem;
 }
 
-.btc-pl-slider {
-  max-width: 1100px;
+/* ----- Controls row (slider + toggles) ----- */
+
+.btc-pl-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
   margin: 0 auto 2rem;
 }
 
 .btc-pl-slider-card {
   padding: 1rem 1.1rem;
+  flex: 1 1 540px;
+  max-width: 640px;
 }
 
 .btc-pl-slider-row {
@@ -262,7 +271,7 @@ body[data-theme="dark"] .btc-toggle-switch::after {
 
 .btc-pl-slider-input {
   flex: 1;
-  min-width: 200px;
+  min-width: 180px;
   accent-color: #f97316;
 }
 
@@ -276,6 +285,18 @@ body[data-theme="dark"] .btc-toggle-switch::after {
 
 body[data-theme="dark"] .btc-pl-slider-range {
   color: #9ca3af;
+}
+
+@media (max-width: 900px) {
+  .btc-pl-controls {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .btc-pl-slider-card {
+    width: 100%;
+    max-width: none;
+  }
 }
 
 .btc-kpi-card {
