@@ -63,6 +63,24 @@ permalink: /grafieken/btc-powerlaw/
   </div>
 </div>
 
+<div class="btc-pl-slider">
+  <div class="btc-kpi-card btc-pl-slider-card">
+    <div class="btc-kpi-label">Projectie tot jaar</div>
+    <div class="btc-pl-slider-row">
+      <div id="projection-year-value" class="btc-kpi-value">–</div>
+      <input
+        id="projection-year-slider"
+        class="btc-pl-slider-input"
+        type="range"
+        min="2024"
+        max="2064"
+        step="1"
+      />
+    </div>
+    <div id="projection-year-range" class="btc-pl-slider-range">–</div>
+  </div>
+</div>
+
 <div class="btc-powerlaw-charts">
   <div class="chart-block">
   <h3>BTC prijs + power law (support & middenlijn)</h3>
@@ -223,6 +241,41 @@ body[data-theme="dark"] .btc-toggle-switch::after {
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 0.9rem;
   margin: 0 auto 2rem;
+}
+
+.btc-pl-slider {
+  max-width: 1100px;
+  margin: 0 auto 2rem;
+}
+
+.btc-pl-slider-card {
+  padding: 1rem 1.1rem;
+}
+
+.btc-pl-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 0.35rem;
+}
+
+.btc-pl-slider-input {
+  flex: 1;
+  min-width: 200px;
+  accent-color: #f97316;
+}
+
+.btc-pl-slider-range {
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+body[data-theme="dark"] .btc-pl-slider-range {
+  color: #9ca3af;
 }
 
 .btc-kpi-card {

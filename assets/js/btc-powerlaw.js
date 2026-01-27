@@ -163,7 +163,7 @@ function buildRollingFits(data) {
 }
 
 // prijs + power law lijnen, mét projectie tot 2054
-function buildPriceSeries(aAvg, bExp, aLower) {
+function buildPriceSeries(aAvg, bExp, aLower, endYear = 2054) {
   const cutoff = "2010-05-01";
 
   const sorted = [...btcMonthlyCloses].sort((a, b) =>
@@ -195,8 +195,6 @@ function buildPriceSeries(aAvg, bExp, aLower) {
       m = 1;
       y++;
     }
-
-    const endYear = 2054;
 
     while (y < endYear || (y === endYear && m <= 12)) {
       const jsDate = new Date(Date.UTC(y, m - 1, 1));
@@ -537,8 +535,24 @@ document.addEventListener("DOMContentLoaded", () => {
   const A_AVG = latestFit ? latestFit.aCoef : 8.85116e-17;
   const A_LOWER = A_AVG * 0.4;
 
+  const currentYear = new Date().getUTCFullYear();
+  const maxProjectionYear = currentYear + 40;
+  const projectionSlider = document.getElementById("projection-year-slider");
+  const projectionValue = document.getElementById("projection-year-value");
+  const projectionRange = document.getElementById("projection-year-range");
+
+  if (projectionSlider) {
+    projectionSlider.min = String(currentYear);
+    projectionSlider.max = String(maxProjectionYear);
+    projectionSlider.value = String(maxProjectionYear);
+  }
+
+  if (projectionRange) {
+    projectionRange.textContent = `${currentYear} → ${maxProjectionYear}`;
+  }
+
   // series opbouwen met die a/b
-  const priceData = buildPriceSeries(A_AVG, B_EXP, A_LOWER);
+  const priceData = buildPriceSeries(A_AVG, B_EXP, A_LOWER, maxProjectionYear);
 
   const priceCtx = document
     .getElementById("btc-price-chart")
@@ -563,8 +577,26 @@ document.addEventListener("DOMContentLoaded", () => {
   if (yLogToggle) useYLog = !!yLogToggle.checked;
   if (xLogToggle) useXLog = !!xLogToggle.checked;
 
+  const filterPriceDataByYear = (yearLimit) =>
+    priceData.filter((row) => {
+      const year = new Date(row.date + "T00:00:00Z").getUTCFullYear();
+      return year <= yearLimit;
+    });
+
+  const setProjectionYear = (yearValue) => {
+    const year = Number(yearValue);
+    if (!Number.isFinite(year)) return;
+    if (projectionValue) projectionValue.textContent = year.toString();
+    createPriceChart(
+      priceCtx,
+      useYLog,
+      useXLog,
+      filterPriceDataByYear(year)
+    );
+  };
+
   // eerste render
-  createPriceChart(priceCtx, useYLog, useXLog, priceData);
+  setProjectionYear(projectionSlider ? projectionSlider.value : maxProjectionYear);
   createSlopeChart(slopeCtx, rollingFits);
   createR2Chart(r2Ctx, rollingFits);
 
@@ -610,7 +642,9 @@ document.addEventListener("DOMContentLoaded", () => {
   if (yLogToggle) {
     yLogToggle.addEventListener("change", (e) => {
       useYLog = e.target.checked;
-      createPriceChart(priceCtx, useYLog, useXLog, priceData);
+      setProjectionYear(
+        projectionSlider ? projectionSlider.value : maxProjectionYear
+      );
     });
   }
 
@@ -618,7 +652,15 @@ document.addEventListener("DOMContentLoaded", () => {
   if (xLogToggle) {
     xLogToggle.addEventListener("change", (e) => {
       useXLog = e.target.checked;
-      createPriceChart(priceCtx, useYLog, useXLog, priceData);
+      setProjectionYear(
+        projectionSlider ? projectionSlider.value : maxProjectionYear
+      );
+    });
+  }
+
+  if (projectionSlider) {
+    projectionSlider.addEventListener("input", (e) => {
+      setProjectionYear(e.target.value);
     });
   }
 });
