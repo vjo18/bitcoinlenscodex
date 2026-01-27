@@ -27,6 +27,10 @@ permalink: /grafieken/btc-powerlaw/
     <div id="kpi-days-genesis" class="btc-kpi-value">–</div>
   </div>
   <div class="btc-kpi-card">
+    <div class="btc-kpi-label">Years since genesis</div>
+    <div id="kpi-years-genesis" class="btc-kpi-value">–</div>
+  </div>
+  <div class="btc-kpi-card">
     <div class="btc-kpi-label">a (scale)</div>
     <div id="kpi-a-scale" class="btc-kpi-value">–</div>
   </div>
