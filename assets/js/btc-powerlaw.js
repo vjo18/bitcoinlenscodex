@@ -536,7 +536,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const A_LOWER = A_AVG * 0.4;
 
   const currentYear = new Date().getUTCFullYear();
-  const maxProjectionYear = currentYear + 40;
+  const maxProjectionYear = currentYear + 20;
   const projectionSlider = document.getElementById("projection-year-slider");
   const projectionValue = document.getElementById("projection-year-value");
   const projectionRange = document.getElementById("projection-year-range");
@@ -544,7 +544,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (projectionSlider) {
     projectionSlider.min = String(currentYear);
     projectionSlider.max = String(maxProjectionYear);
-    projectionSlider.value = String(maxProjectionYear);
+    projectionSlider.value = String(currentYear);
   }
 
   if (projectionRange) {
