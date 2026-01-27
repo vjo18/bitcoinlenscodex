@@ -351,6 +351,8 @@ body[data-theme="dark"] .chart-subtitle {
 <!-- Chart.js van CDN -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
+<!-- Losse datafile met maandelijkse closes -->
+<script src="{{ '/assets/js/btc-powerlaw-data.js' | relative_url }}"></script>
+
 <!-- Jouw eigen script -->
 <script src="{{ '/assets/js/btc-powerlaw.js' | relative_url }}"></script>
-
