@@ -25,7 +25,7 @@ permalink: /grafieken/btc-powerlaw/
     <div id="kpi-pl-avg" class="btc-kpi-value">–</div>
   </div>
   <div class="btc-kpi-card">
-    <div class="btc-kpi-label">PL support vandaag</div>
+    <div class="btc-kpi-label">PL support (10% quantiel)</div>
     <div id="kpi-pl-support" class="btc-kpi-value">–</div>
   </div>
   <div class="btc-kpi-card">
