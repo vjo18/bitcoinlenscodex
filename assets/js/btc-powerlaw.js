@@ -17,6 +17,7 @@ if (typeof Chart !== "undefined") {
 
 const GENESIS_MS = Date.UTC(2009, 0, 3); // 2009-01-03
 const EPS = 1e-9;
+const QUANTILE_LEVELS = [0, 10, 20, 50, 80, 90, 100];
 
 // dagen sinds genesis op basis van datumstring (YYYY-MM-DD)
 function daysSinceGenesisFromDateStr(dateStr) {
@@ -119,6 +120,17 @@ function formatXTickDays(value) {
   return year.toString();
 }
 
+function quantile(sortedArr, q) {
+  if (!sortedArr.length) return NaN;
+  if (q <= 0) return sortedArr[0];
+  if (q >= 1) return sortedArr[sortedArr.length - 1];
+  const pos = (sortedArr.length - 1) * q;
+  const base = Math.floor(pos);
+  const rest = pos - base;
+  const next = sortedArr[base + 1] ?? sortedArr[base];
+  return sortedArr[base] + rest * (next - sortedArr[base]);
+}
+
 // =============== DATA PREP ===============
 
 // price = a * days^b
@@ -162,8 +174,25 @@ function buildRollingFits(data) {
   return results;
 }
 
-// prijs + power law lijnen, mét projectie tot 2054
-function buildPriceSeries(aAvg, bExp, aLower, endYear = 2054) {
+function buildQuantileMultipliers(data, aAvg, bExp) {
+  const ratios = data
+    .filter((row) => row.price > 0)
+    .map((row) => {
+      const trend = pricePLDays(aAvg, bExp, row.date);
+      return row.price / (trend || EPS);
+    })
+    .filter((x) => isFinite(x) && x > 0)
+    .sort((a, b) => a - b);
+
+  const multipliers = {};
+  for (const level of QUANTILE_LEVELS) {
+    multipliers[level] = quantile(ratios, level / 100);
+  }
+  return multipliers;
+}
+
+// prijs + quantile power law banden, mét projectie tot gekozen jaar
+function buildPriceSeries(aAvg, bExp, aLower, quantileMultipliers, endYear = 2054) {
   const cutoff = "2010-05-01";
 
   const sorted = [...btcMonthlyCloses].sort((a, b) =>
@@ -175,11 +204,28 @@ function buildPriceSeries(aAvg, bExp, aLower, endYear = 2054) {
   // historische data
   for (const row of sorted) {
     if (row.date < cutoff) continue;
+    const plMedian = pricePLDays(aAvg, bExp, row.date);
+    const quantileBands = {};
+
+    for (const level of QUANTILE_LEVELS) {
+      quantileBands[level] = plMedian * (quantileMultipliers[level] || 1);
+    }
+
+    const bandLow = quantileBands[0];
+    const bandHigh = quantileBands[100];
+    const oscillator =
+      row.price > 0 && bandHigh > bandLow
+        ? ((row.price - bandLow) / (bandHigh - bandLow)) * 100
+        : null;
+
     rows.push({
       date: row.date,
       price: row.price,
-      plAvg: pricePLDays(aAvg, bExp, row.date),
+      plMedian,
+      plAvg: plMedian,
       plLower: pricePLDays(aLower, bExp, row.date),
+      quantileBands,
+      oscillator: oscillator == null ? null : Math.max(0, Math.min(100, oscillator)),
     });
   }
 
@@ -203,8 +249,14 @@ function buildPriceSeries(aAvg, bExp, aLower, endYear = 2054) {
       rows.push({
         date: dateStr,
         price: null,
+        plMedian: pricePLDays(aAvg, bExp, dateStr),
         plAvg: pricePLDays(aAvg, bExp, dateStr),
         plLower: pricePLDays(aLower, bExp, dateStr),
+        quantileBands: QUANTILE_LEVELS.reduce((acc, level) => {
+          acc[level] = pricePLDays(aAvg, bExp, dateStr) * (quantileMultipliers[level] || 1);
+          return acc;
+        }, {}),
+        oscillator: null,
       });
 
       m++;
@@ -223,12 +275,17 @@ function buildPriceSeries(aAvg, bExp, aLower, endYear = 2054) {
 let priceChart = null;
 let slopeChart = null;
 let r2Chart = null;
+let oscillatorChart = null;
 
 // hoofdchart met X/Y log-toggle + jaartallen op de x-as
 function createPriceChart(ctx, yLog, xLog, priceData) {
   const pointsMarket = [];
   const pointsAvg = [];
   const pointsLower = [];
+  const quantilePoints = QUANTILE_LEVELS.reduce((acc, level) => {
+    acc[level] = [];
+    return acc;
+  }, {});
 
   for (const row of priceData) {
     const d = daysSinceGenesisFromDateStr(row.date);
@@ -237,16 +294,16 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
       y: row.price ?? null,
       date: row.date,
     });
-    pointsAvg.push({
-      x: d,
-      y: row.plAvg,
-      date: row.date,
-    });
-    pointsLower.push({
-      x: d,
-      y: row.plLower,
-      date: row.date,
-    });
+    for (const level of QUANTILE_LEVELS) {
+      const bandValue = row.quantileBands?.[level] ?? row.plAvg;
+      quantilePoints[level].push({
+        x: d,
+        y: bandValue,
+        date: row.date,
+      });
+    }
+    pointsAvg.push({ x: d, y: row.plAvg, date: row.date });
+    pointsLower.push({ x: d, y: row.plLower, date: row.date });
   }
 
   // ✅ bepaal eerste echte datapunt (met price) en gebruik dat als x-min
@@ -257,19 +314,44 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
     priceChart.destroy();
   }
 
+  const quantileBandColors = {
+    0: "rgba(30, 41, 59, 0.18)",
+    10: "rgba(37, 99, 235, 0.16)",
+    20: "rgba(59, 130, 246, 0.14)",
+    50: "rgba(16, 185, 129, 0.15)",
+    80: "rgba(249, 115, 22, 0.14)",
+    90: "rgba(239, 68, 68, 0.14)",
+    100: "rgba(127, 29, 29, 0.16)",
+  };
+
+  const quantileBorderColors = {
+    0: "#334155",
+    10: "#2563eb",
+    20: "#3b82f6",
+    50: "#10b981",
+    80: "#f97316",
+    90: "#ef4444",
+    100: "#7f1d1d",
+  };
+
+  const quantileDatasets = QUANTILE_LEVELS.map((level, idx) => ({
+    label: `Power law quantile ${level}%`,
+    data: quantilePoints[level],
+    borderWidth: level === 50 ? 2.2 : 1.6,
+    borderColor: quantileBorderColors[level],
+    backgroundColor: quantileBandColors[level],
+    pointRadius: 0,
+    spanGaps: true,
+    parsing: false,
+    fill: idx === 0 ? false : "-1",
+    order: 1,
+  }));
+
   priceChart = new Chart(ctx, {
     type: "line",
     data: {
       datasets: [
-        {
-          label: "BTC maandelijkse close (EUR)",
-          data: pointsMarket,
-          borderWidth: 1.8,
-          borderColor: "#f97316",
-          pointRadius: 0,
-          spanGaps: false,
-          parsing: false,
-        },
+        ...quantileDatasets,
         {
           label: "Power law middenlijn",
           data: pointsAvg,
@@ -279,6 +361,7 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
           pointRadius: 0,
           spanGaps: true,
           parsing: false,
+          order: 2,
         },
         {
           label: "Power law support",
@@ -289,6 +372,17 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
           pointRadius: 0,
           spanGaps: true,
           parsing: false,
+          order: 2,
+        },
+        {
+          label: "BTC maandelijkse close (EUR)",
+          data: pointsMarket,
+          borderWidth: 2,
+          borderColor: "#f97316",
+          pointRadius: 0,
+          spanGaps: false,
+          parsing: false,
+          order: 3,
         },
       ],
     },
@@ -346,6 +440,102 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
               `${context.dataset.label}: ${formatMoneyEUR(
                 context.parsed.y
               )}`,
+          },
+        },
+      },
+    },
+  });
+}
+
+function createQuantileOscillatorChart(ctx, priceData) {
+  const pointsOscillator = priceData
+    .map((row) => ({
+      x: daysSinceGenesisFromDateStr(row.date),
+      y: row.oscillator,
+      date: row.date,
+    }))
+    .filter((p) => isFinite(p.y));
+
+  if (!pointsOscillator.length) return;
+
+  const firstWithPrice = pointsOscillator.find((p) => p.y != null);
+  const minDays = firstWithPrice ? firstWithPrice.x : 1;
+
+  if (oscillatorChart) oscillatorChart.destroy();
+
+  oscillatorChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      datasets: [
+        {
+          label: "Quantile oscillator",
+          data: pointsOscillator,
+          borderColor: "#7c3aed",
+          backgroundColor: "rgba(124, 58, 237, 0.15)",
+          borderWidth: 1.8,
+          pointRadius: 0,
+          spanGaps: false,
+          fill: true,
+          parsing: false,
+        },
+        {
+          label: "80% zone",
+          data: pointsOscillator.map((p) => ({ ...p, y: 80 })),
+          borderColor: "rgba(239, 68, 68, 0.65)",
+          borderDash: [6, 4],
+          borderWidth: 1,
+          pointRadius: 0,
+          parsing: false,
+          spanGaps: true,
+        },
+        {
+          label: "20% zone",
+          data: pointsOscillator.map((p) => ({ ...p, y: 20 })),
+          borderColor: "rgba(37, 99, 235, 0.65)",
+          borderDash: [6, 4],
+          borderWidth: 1,
+          pointRadius: 0,
+          parsing: false,
+          spanGaps: true,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      scales: {
+        x: {
+          type: "linear",
+          min: minDays,
+          ticks: {
+            maxTicksLimit: 12,
+            callback: (value) => formatXTickDays(value),
+          },
+          grid: { color: "rgba(148, 163, 184, 0.3)" },
+        },
+        y: {
+          min: 0,
+          max: 100,
+          ticks: {
+            callback: (value) => `${value}%`,
+          },
+          grid: { color: "rgba(148, 163, 184, 0.3)" },
+          title: {
+            display: true,
+            text: "Positie binnen quantile-banden",
+          },
+        },
+      },
+      plugins: {
+        legend: { display: true, position: "bottom" },
+        tooltip: {
+          callbacks: {
+            title: (items) => items[0]?.raw?.date ?? "",
+            label: (context) =>
+              context.dataset.label === "Quantile oscillator"
+                ? `${context.dataset.label}: ${context.parsed.y?.toFixed(1)}%`
+                : context.dataset.label,
           },
         },
       },
@@ -515,12 +705,14 @@ async function fetchLiveBtceur() {
 
 // =============== INIT ===============
 
-function updateTodayKpis(A_AVG, A_LOWER, B_EXP) {
+function updateTodayKpis(A_AVG, B_EXP, quantileMultipliers) {
   const todayIso = new Date().toISOString().slice(0, 10);
   const dToday = daysSinceGenesisFromDateStr(todayIso);
+  const todayMedian = pricePLDays(A_AVG, B_EXP, todayIso);
+  const todaySupport = todayMedian * (quantileMultipliers[10] || 1);
 
-  setKpiText("kpi-pl-avg", formatMoneyEUR(pricePLDays(A_AVG, B_EXP, todayIso)));
-  setKpiText("kpi-pl-support", formatMoneyEUR(pricePLDays(A_LOWER, B_EXP, todayIso)));
+  setKpiText("kpi-pl-avg", formatMoneyEUR(todayMedian));
+  setKpiText("kpi-pl-support", formatMoneyEUR(todaySupport));
   setKpiText(
     "kpi-days-genesis",
     Math.floor(dToday).toLocaleString("nl-BE")
@@ -551,6 +743,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const B_EXP = latestFit ? latestFit.bExp : 5.5697;
   const A_AVG = latestFit ? latestFit.aCoef : 8.85116e-17;
   const A_LOWER = A_AVG * 0.4;
+  const quantileMultipliers = buildQuantileMultipliers(btcMonthlyCloses, A_AVG, B_EXP);
 
   const currentYear = new Date().getUTCFullYear();
   const maxProjectionYear = currentYear + 20;
@@ -569,7 +762,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // series opbouwen met die a/b
-  const priceData = buildPriceSeries(A_AVG, B_EXP, A_LOWER, maxProjectionYear);
+  const priceData = buildPriceSeries(A_AVG, B_EXP, A_LOWER, quantileMultipliers, maxProjectionYear);
 
   const priceCtx = document
     .getElementById("btc-price-chart")
@@ -579,6 +772,9 @@ document.addEventListener("DOMContentLoaded", () => {
     .getContext("2d");
   const r2Ctx = document
     .getElementById("btc-r2-chart")
+    .getContext("2d");
+  const oscillatorCtx = document
+    .getElementById("btc-quantile-oscillator-chart")
     .getContext("2d");
 
   const yLogToggle =
@@ -610,6 +806,7 @@ document.addEventListener("DOMContentLoaded", () => {
       useXLog,
       filterPriceDataByYear(year)
     );
+    createQuantileOscillatorChart(oscillatorCtx, filterPriceDataByYear(year));
   };
 
   // eerste render
@@ -643,7 +840,7 @@ document.addEventListener("DOMContentLoaded", () => {
   setKpiText("kpi-b-exp", latestFit ? latestFit.bExp.toFixed(4).replace(".", ",") : "-");
   setKpiText("kpi-r2", latestFit ? latestFit.r2.toFixed(3).replace(".", ",") : "-");
 
-  updateTodayKpis(A_AVG, A_LOWER, B_EXP);
+  updateTodayKpis(A_AVG, B_EXP, quantileMultipliers);
 
   // toggle log/linear Y
   if (yLogToggle) {
