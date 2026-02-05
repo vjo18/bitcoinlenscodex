@@ -18,6 +18,15 @@ if (typeof Chart !== "undefined") {
 const GENESIS_MS = Date.UTC(2009, 0, 3); // 2009-01-03
 const EPS = 1e-9;
 const QUANTILE_LEVELS = [0, 10, 20, 50, 80, 90, 100];
+const DEFAULT_QUANTILE_MULTIPLIERS = {
+  0: 0.35,
+  10: 0.5,
+  20: 0.6,
+  50: 1,
+  80: 1.8,
+  90: 2.5,
+  100: 4,
+};
 
 // dagen sinds genesis op basis van datumstring (YYYY-MM-DD)
 function daysSinceGenesisFromDateStr(dateStr) {
@@ -131,6 +140,57 @@ function quantile(sortedArr, q) {
   return sortedArr[base] + rest * (next - sortedArr[base]);
 }
 
+function getQuantileValue(row, level) {
+  const band = row?.quantileBands?.[level];
+  if (isFinite(band) && band > 0) return band;
+  return row?.plAvg ?? null;
+}
+
+function sanitizeQuantileMultipliers(multipliers) {
+  const sanitized = {};
+  let previous = 0;
+
+  for (const level of QUANTILE_LEVELS) {
+    const fallback = DEFAULT_QUANTILE_MULTIPLIERS[level] ?? 1;
+    const value = multipliers?.[level];
+    const finiteValue = isFinite(value) && value > 0 ? value : fallback;
+    sanitized[level] = Math.max(previous, finiteValue);
+    previous = sanitized[level];
+  }
+
+  if (sanitized[100] <= sanitized[0]) {
+    sanitized[100] = Math.max(sanitized[0] * 1.01, 1);
+  }
+
+  return sanitized;
+}
+
+function ratioToOscillatorPercent(ratio, multipliers) {
+  if (!isFinite(ratio) || ratio <= 0) return null;
+
+  const qs = QUANTILE_LEVELS.map((level) => ({
+    level,
+    value: multipliers[level],
+  }));
+
+  if (ratio <= qs[0].value) return 0;
+  if (ratio >= qs[qs.length - 1].value) return 100;
+
+  for (let i = 1; i < qs.length; i++) {
+    const prev = qs[i - 1];
+    const curr = qs[i];
+
+    if (ratio <= curr.value) {
+      const span = curr.value - prev.value;
+      if (!isFinite(span) || span <= 0) return curr.level;
+      const t = (ratio - prev.value) / span;
+      return prev.level + t * (curr.level - prev.level);
+    }
+  }
+
+  return null;
+}
+
 // =============== DATA PREP ===============
 
 // price = a * days^b
@@ -184,15 +244,20 @@ function buildQuantileMultipliers(data, aAvg, bExp) {
     .filter((x) => isFinite(x) && x > 0)
     .sort((a, b) => a - b);
 
+  if (ratios.length < 8) {
+    return sanitizeQuantileMultipliers(DEFAULT_QUANTILE_MULTIPLIERS);
+  }
+
   const multipliers = {};
   for (const level of QUANTILE_LEVELS) {
     multipliers[level] = quantile(ratios, level / 100);
   }
-  return multipliers;
+  return sanitizeQuantileMultipliers(multipliers);
 }
 
 // prijs + quantile power law banden, mét projectie tot gekozen jaar
 function buildPriceSeries(aAvg, bExp, aLower, quantileMultipliers, endYear = 2054) {
+  const sanitizedMultipliers = sanitizeQuantileMultipliers(quantileMultipliers);
   const cutoff = "2010-05-01";
 
   const sorted = [...btcMonthlyCloses].sort((a, b) =>
@@ -208,15 +273,11 @@ function buildPriceSeries(aAvg, bExp, aLower, quantileMultipliers, endYear = 205
     const quantileBands = {};
 
     for (const level of QUANTILE_LEVELS) {
-      quantileBands[level] = plMedian * (quantileMultipliers[level] || 1);
+      quantileBands[level] = plMedian * sanitizedMultipliers[level];
     }
 
-    const bandLow = quantileBands[0];
-    const bandHigh = quantileBands[100];
-    const oscillator =
-      row.price > 0 && bandHigh > bandLow
-        ? ((row.price - bandLow) / (bandHigh - bandLow)) * 100
-        : null;
+    const ratio = row.price > 0 ? row.price / (plMedian || EPS) : NaN;
+    const oscillator = ratioToOscillatorPercent(ratio, sanitizedMultipliers);
 
     rows.push({
       date: row.date,
@@ -253,7 +314,7 @@ function buildPriceSeries(aAvg, bExp, aLower, quantileMultipliers, endYear = 205
         plAvg: pricePLDays(aAvg, bExp, dateStr),
         plLower: pricePLDays(aLower, bExp, dateStr),
         quantileBands: QUANTILE_LEVELS.reduce((acc, level) => {
-          acc[level] = pricePLDays(aAvg, bExp, dateStr) * (quantileMultipliers[level] || 1);
+          acc[level] = pricePLDays(aAvg, bExp, dateStr) * sanitizedMultipliers[level];
           return acc;
         }, {}),
         oscillator: null,
@@ -297,7 +358,7 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
     for (const level of QUANTILE_LEVELS) {
       quantilePoints[level].push({
         x: d,
-        y: row.quantileBands[level],
+        y: getQuantileValue(row, level),
         date: row.date,
       });
     }
@@ -336,13 +397,14 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
   const quantileDatasets = QUANTILE_LEVELS.map((level, idx) => ({
     label: `Power law quantile ${level}%`,
     data: quantilePoints[level],
-    borderWidth: level === 50 ? 1.8 : 1.2,
+    borderWidth: level === 50 ? 2.2 : 1.7,
     borderColor: quantileBorderColors[level],
     backgroundColor: quantileBandColors[level],
     pointRadius: 0,
     spanGaps: true,
     parsing: false,
     fill: idx === 0 ? false : "-1",
+    order: 2,
   }));
 
   priceChart = new Chart(ctx, {
@@ -359,6 +421,7 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
           pointRadius: 0,
           spanGaps: true,
           parsing: false,
+          order: 3,
         },
         {
           label: "Power law support",
@@ -369,6 +432,7 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
           pointRadius: 0,
           spanGaps: true,
           parsing: false,
+          order: 3,
         },
         {
           label: "BTC maandelijkse close (EUR)",
@@ -378,6 +442,7 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
           pointRadius: 0,
           spanGaps: false,
           parsing: false,
+          order: 1,
         },
       ],
     },
@@ -443,11 +508,21 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
 }
 
 function createQuantileOscillatorChart(ctx, priceData) {
-  const pointsOscillator = priceData.map((row) => ({
-    x: daysSinceGenesisFromDateStr(row.date),
-    y: row.oscillator,
-    date: row.date,
-  }));
+  const pointsOscillator = priceData
+    .map((row) => ({
+      x: daysSinceGenesisFromDateStr(row.date),
+      y: row.oscillator,
+      date: row.date,
+    }))
+    .filter((p) => isFinite(p.y) && p.y >= 0 && p.y <= 100);
+
+  if (!pointsOscillator.length) {
+    if (oscillatorChart) {
+      oscillatorChart.destroy();
+      oscillatorChart = null;
+    }
+    return;
+  }
 
   const firstWithPrice = pointsOscillator.find((p) => p.y != null);
   const minDays = firstWithPrice ? firstWithPrice.x : 1;
