@@ -131,6 +131,12 @@ function quantile(sortedArr, q) {
   return sortedArr[base] + rest * (next - sortedArr[base]);
 }
 
+function getQuantileValue(row, level) {
+  const band = row?.quantileBands?.[level];
+  if (isFinite(band) && band > 0) return band;
+  return row?.plAvg ?? null;
+}
+
 // =============== DATA PREP ===============
 
 // price = a * days^b
@@ -297,7 +303,7 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
     for (const level of QUANTILE_LEVELS) {
       quantilePoints[level].push({
         x: d,
-        y: row.quantileBands[level],
+        y: getQuantileValue(row, level),
         date: row.date,
       });
     }
@@ -336,13 +342,14 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
   const quantileDatasets = QUANTILE_LEVELS.map((level, idx) => ({
     label: `Power law quantile ${level}%`,
     data: quantilePoints[level],
-    borderWidth: level === 50 ? 1.8 : 1.2,
+    borderWidth: level === 50 ? 2.2 : 1.7,
     borderColor: quantileBorderColors[level],
     backgroundColor: quantileBandColors[level],
     pointRadius: 0,
     spanGaps: true,
     parsing: false,
     fill: idx === 0 ? false : "-1",
+    order: 2,
   }));
 
   priceChart = new Chart(ctx, {
@@ -359,6 +366,7 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
           pointRadius: 0,
           spanGaps: true,
           parsing: false,
+          order: 3,
         },
         {
           label: "Power law support",
@@ -369,6 +377,7 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
           pointRadius: 0,
           spanGaps: true,
           parsing: false,
+          order: 3,
         },
         {
           label: "BTC maandelijkse close (EUR)",
@@ -378,6 +387,7 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
           pointRadius: 0,
           spanGaps: false,
           parsing: false,
+          order: 1,
         },
       ],
     },
@@ -443,11 +453,21 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
 }
 
 function createQuantileOscillatorChart(ctx, priceData) {
-  const pointsOscillator = priceData.map((row) => ({
-    x: daysSinceGenesisFromDateStr(row.date),
-    y: row.oscillator,
-    date: row.date,
-  }));
+  const pointsOscillator = priceData
+    .map((row) => ({
+      x: daysSinceGenesisFromDateStr(row.date),
+      y: row.oscillator,
+      date: row.date,
+    }))
+    .filter((p) => isFinite(p.y) && p.y >= 0 && p.y <= 100);
+
+  if (!pointsOscillator.length) {
+    if (oscillatorChart) {
+      oscillatorChart.destroy();
+      oscillatorChart = null;
+    }
+    return;
+  }
 
   const firstWithPrice = pointsOscillator.find((p) => p.y != null);
   const minDays = firstWithPrice ? firstWithPrice.x : 1;
