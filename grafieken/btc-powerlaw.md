@@ -9,6 +9,12 @@ permalink: /grafieken/btc-powerlaw/
   van de exponent (b) en R² doorheen de tijd.
 </p>
 
+<p>
+  De quantile-banden zijn statistisch afgeleid uit de afwijking rond de lange termijn power-law trend
+  en tonen waarderingszones op 0, 10, 20, 50, 80, 90 en 100 percentiel.
+  De bijkomende Quantile Oscillator normaliseert de huidige prijspositie binnen deze bandstructuur.
+</p>
+
 <div class="btc-kpi-row">
   <div class="btc-kpi-card">
     <div class="btc-kpi-label">Live BTC</div>
@@ -79,11 +85,19 @@ permalink: /grafieken/btc-powerlaw/
 </div>
 
 <div class="btc-powerlaw-charts">
-  <div class="chart-block">
-  <h3>BTC prijs + power law (support & middenlijn)</h3>
-  <p class="chart-subtitle">Maandelijkse closes in EUR • sinds 2010</p>
+<div class="chart-block">
+  <h3>BTC prijs + power law quantile-banden</h3>
+  <p class="chart-subtitle">Maandelijkse closes in EUR • quantiles: 0, 10, 20, 50, 80, 90, 100</p>
   <div class="chart-canvas">
     <canvas id="btc-price-chart"></canvas>
+  </div>
+</div>
+
+<div class="chart-block">
+  <h3>Quantile Oscillator</h3>
+  <p class="chart-subtitle">Genormaliseerde prijspositie binnen de power-law quantile-structuur</p>
+  <div class="chart-canvas">
+    <canvas id="btc-quantile-oscillator-chart"></canvas>
   </div>
 </div>
 
