@@ -81,6 +81,12 @@ permalink: /grafieken/btc-powerlaw/
       <input id="toggle-xlog" type="checkbox" />
       <span class="btc-toggle-switch"></span>
     </label>
+
+    <label class="btc-quantile-slider">
+      <span class="btc-toggle-label">Quantiles</span>
+      <input id="quantile-mode-slider" type="range" min="0" max="2" step="1" value="2" />
+      <span id="quantile-mode-label" class="btc-quantile-mode-label">Power regression</span>
+    </label>
   </div>
 </div>
 
@@ -249,6 +255,30 @@ body[data-theme="dark"] .btc-toggle-switch {
 
 body[data-theme="dark"] .btc-toggle-switch::after {
   background: #e5e7eb;
+}
+
+/* ----- Quantile mode slider ----- */
+.btc-quantile-slider {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
+.btc-quantile-slider input[type="range"] {
+  width: 90px;
+  accent-color: #2563eb;
+}
+
+.btc-quantile-mode-label {
+  font-size: 0.8rem;
+  color: #0f172a;
+  white-space: nowrap;
+}
+
+body[data-theme="dark"] .btc-quantile-mode-label {
+  color: #e2e8f0;
 }
 
 /* =======================================================================

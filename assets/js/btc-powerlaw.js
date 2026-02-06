@@ -140,13 +140,15 @@ function quantile(sortedArr, q) {
   return sortedArr[base] + rest * (next - sortedArr[base]);
 }
 
-function sanitizeQuantileMultipliers(rawMultipliers) {
+function sanitizeQuantileBands(rawBands, plMedian) {
   const sanitized = {};
   let previous = 0;
+  const fallbackBase = isFinite(plMedian) && plMedian > 0 ? plMedian : 1;
 
   for (const level of QUANTILE_LEVELS) {
-    const raw = Number(rawMultipliers?.[level]);
-    const fallback = DEFAULT_QUANTILE_MULTIPLIERS[level];
+    const raw = Number(rawBands?.[level]);
+    const fallbackMultiplier = DEFAULT_QUANTILE_MULTIPLIERS[level] || 1;
+    const fallback = fallbackBase * fallbackMultiplier;
     const finite = isFinite(raw) && raw > 0 ? raw : fallback;
     const next = Math.max(finite, previous + EPS);
     sanitized[level] = next;
@@ -156,8 +158,11 @@ function sanitizeQuantileMultipliers(rawMultipliers) {
   return sanitized;
 }
 
-function getQuantileValue(row, level) {
-  const band = row?.quantileBands?.[level];
+function getQuantileValue(row, level, mode) {
+  if (!row || mode === "off") return row?.plAvg ?? null;
+  const bands =
+    mode === "rolling" ? row.quantileBandsRolling : row.quantileBandsRegression;
+  const band = bands?.[level];
   if (isFinite(band) && band > 0) return band;
   return row?.plAvg ?? null;
 }
@@ -205,43 +210,83 @@ function buildRollingFits(data) {
   return results;
 }
 
-function buildQuantileMultipliers(data, aAvg, bExp) {
-  const ratios = (data ?? [])
+function buildResidualRows(data, aAvg, bExp) {
+  return (data ?? [])
     .filter((row) => row && row.date)
     .map((row) => {
       const price = Number(row.price);
-      if (!isFinite(price) || price <= 0) return null;
-
-      const trend = pricePLDays(aAvg, bExp, row.date);
-      if (!isFinite(trend) || trend <= 0) return null;
-
-      return price / trend;
+      const d = daysSinceGenesisFromDateStr(row.date);
+      if (!isFinite(price) || price <= 0 || !isFinite(d) || d <= 0) return null;
+      const plMedian = pricePLDays(aAvg, bExp, row.date);
+      if (!isFinite(plMedian) || plMedian <= 0) return null;
+      return {
+        date: row.date,
+        logDays: Math.log10(d),
+        residual: Math.log10(price) - Math.log10(plMedian),
+      };
     })
-    .filter((x) => isFinite(x) && x > 0)
-    .sort((a, b) => a - b);
+    .filter(Boolean);
+}
 
-  if (!ratios.length) {
-    console.warn("[btc-powerlaw] Geen geldige ratios → quantile multipliers fallback=1");
-    return Object.fromEntries(QUANTILE_LEVELS.map((q) => [q, 1]));
-  }
+function buildResidualRegressionModels(residualRows) {
+  if (!residualRows.length) return null;
+  const residuals = residualRows.map((r) => r.residual).sort((a, b) => a - b);
+  const models = {};
 
-  const multipliers = {};
   for (const level of QUANTILE_LEVELS) {
-    multipliers[level] = quantile(ratios, level / 100);
+    const threshold = quantile(residuals, level / 100);
+    let subset = residualRows;
+    if (level > 50) {
+      subset = residualRows.filter((r) => r.residual >= threshold);
+    } else if (level < 50) {
+      subset = residualRows.filter((r) => r.residual <= threshold);
+    }
+    if (subset.length < 2) {
+      subset = residualRows;
+    }
+    const xs = subset.map((r) => r.logDays);
+    const ys = subset.map((r) => r.residual);
+    const { A, B } = linearRegressionStats(xs, ys);
+    models[level] = { intercept: A, slope: B, threshold };
   }
 
-  console.table(multipliers); // debug: je wil hier spreiding zien
-  return multipliers;
+  return models;
+}
+
+function getRegressionBandsForDate(dateStr, aAvg, bExp, models) {
+  const plMedian = pricePLDays(aAvg, bExp, dateStr);
+  const d = daysSinceGenesisFromDateStr(dateStr);
+  const logDays = Math.log10(d);
+  const bands = {};
+
+  for (const level of QUANTILE_LEVELS) {
+    const model = models?.[level];
+    let residual = Math.log10(DEFAULT_QUANTILE_MULTIPLIERS[level] || 1);
+    if (model && isFinite(model.intercept) && isFinite(model.slope)) {
+      residual = model.intercept + model.slope * logDays;
+    }
+    bands[level] = plMedian * Math.pow(10, residual);
+  }
+
+  return sanitizeQuantileBands(bands, plMedian);
 }
 
 
 // prijs + quantile power law banden, mét projectie tot gekozen jaar
-function buildPriceSeries(aAvg, bExp, aLower, quantileMultipliers, endYear = 2054) {
-  const safeQuantileMultipliers = sanitizeQuantileMultipliers(quantileMultipliers);
+function buildPriceSeries(aAvg, bExp, aLower, endYear = 2054) {
   const cutoff = "2010-05-01";
-
   const sorted = [...btcMonthlyCloses].sort((a, b) =>
     a.date < b.date ? -1 : 1
+  );
+
+  const residualRows = buildResidualRows(sorted, aAvg, bExp);
+  const regressionModels = buildResidualRegressionModels(residualRows);
+  const rollingResiduals = [];
+  let latestRollingQuantileResiduals = Object.fromEntries(
+    QUANTILE_LEVELS.map((level) => [
+      level,
+      Math.log10(DEFAULT_QUANTILE_MULTIPLIERS[level] || 1),
+    ])
   );
 
   const rows = [];
@@ -250,26 +295,50 @@ function buildPriceSeries(aAvg, bExp, aLower, quantileMultipliers, endYear = 205
   for (const row of sorted) {
     if (row.date < cutoff) continue;
     const plMedian = pricePLDays(aAvg, bExp, row.date);
-    const quantileBands = {};
+    const plLower = pricePLDays(aLower, bExp, row.date);
+    const price = Number(row.price);
 
-    for (const level of QUANTILE_LEVELS) {
-      quantileBands[level] = plMedian * safeQuantileMultipliers[level];
+    if (isFinite(price) && price > 0 && isFinite(plMedian) && plMedian > 0) {
+      const residual = Math.log10(price) - Math.log10(plMedian);
+      rollingResiduals.push(residual);
+      const sortedResiduals = [...rollingResiduals].sort((a, b) => a - b);
+      latestRollingQuantileResiduals = {};
+      for (const level of QUANTILE_LEVELS) {
+        latestRollingQuantileResiduals[level] = quantile(
+          sortedResiduals,
+          level / 100
+        );
+      }
     }
 
-    const bandLow = quantileBands[0];
-    const bandHigh = quantileBands[100];
+    const rollingBands = {};
+    for (const level of QUANTILE_LEVELS) {
+      const residualShift = latestRollingQuantileResiduals[level];
+      rollingBands[level] = plMedian * Math.pow(10, residualShift);
+    }
+    const quantileBandsRolling = sanitizeQuantileBands(rollingBands, plMedian);
+    const quantileBandsRegression = getRegressionBandsForDate(
+      row.date,
+      aAvg,
+      bExp,
+      regressionModels
+    );
+
+    const bandLow = quantileBandsRegression[0];
+    const bandHigh = quantileBandsRegression[100];
     const oscillator =
-      row.price > 0 && isFinite(bandLow) && isFinite(bandHigh) && bandHigh > bandLow
-        ? ((row.price - bandLow) / (bandHigh - bandLow)) * 100
+      price > 0 && isFinite(bandLow) && isFinite(bandHigh) && bandHigh > bandLow
+        ? ((price - bandLow) / (bandHigh - bandLow)) * 100
         : null;
 
     rows.push({
       date: row.date,
-      price: row.price,
+      price: isFinite(price) && price > 0 ? price : null,
       plMedian,
       plAvg: plMedian,
-      plLower: pricePLDays(aLower, bExp, row.date),
-      quantileBands,
+      plLower,
+      quantileBandsRolling,
+      quantileBandsRegression,
       oscillator: oscillator == null ? null : Math.max(0, Math.min(100, oscillator)),
     });
   }
@@ -290,17 +359,28 @@ function buildPriceSeries(aAvg, bExp, aLower, quantileMultipliers, endYear = 205
     while (y < endYear || (y === endYear && m <= 12)) {
       const jsDate = new Date(Date.UTC(y, m - 1, 1));
       const dateStr = jsDate.toISOString().slice(0, 10);
+      const plMedian = pricePLDays(aAvg, bExp, dateStr);
+      const plLower = pricePLDays(aLower, bExp, dateStr);
+
+      const rollingBands = {};
+      for (const level of QUANTILE_LEVELS) {
+        const residualShift = latestRollingQuantileResiduals[level];
+        rollingBands[level] = plMedian * Math.pow(10, residualShift);
+      }
 
       rows.push({
         date: dateStr,
         price: null,
-        plMedian: pricePLDays(aAvg, bExp, dateStr),
-        plAvg: pricePLDays(aAvg, bExp, dateStr),
-        plLower: pricePLDays(aLower, bExp, dateStr),
-        quantileBands: QUANTILE_LEVELS.reduce((acc, level) => {
-          acc[level] = pricePLDays(aAvg, bExp, dateStr) * safeQuantileMultipliers[level];
-          return acc;
-        }, {}),
+        plMedian,
+        plAvg: plMedian,
+        plLower,
+        quantileBandsRolling: sanitizeQuantileBands(rollingBands, plMedian),
+        quantileBandsRegression: getRegressionBandsForDate(
+          dateStr,
+          aAvg,
+          bExp,
+          regressionModels
+        ),
         oscillator: null,
       });
 
@@ -312,7 +392,11 @@ function buildPriceSeries(aAvg, bExp, aLower, quantileMultipliers, endYear = 205
     }
   }
 
-  return rows;
+  return {
+    rows,
+    rollingQuantileResiduals: latestRollingQuantileResiduals,
+    regressionModels,
+  };
 }
 
 // =============== CHART CONSTRUCTORS ===============
@@ -323,7 +407,7 @@ let r2Chart = null;
 let oscillatorChart = null;
 
 // hoofdchart met X/Y log-toggle + jaartallen op de x-as
-function createPriceChart(ctx, yLog, xLog, priceData) {
+function createPriceChart(ctx, yLog, xLog, priceData, quantileMode) {
   const pointsMarket = [];
   const pointsAvg = [];
   const pointsLower = [];
@@ -342,7 +426,7 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
     for (const level of QUANTILE_LEVELS) {
       quantilePoints[level].push({
         x: d,
-        y: getQuantileValue(row, level),
+        y: getQuantileValue(row, level, quantileMode),
         date: row.date,
       });
     }
@@ -378,18 +462,21 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
     100: "#7f1d1d",
   };
 
-  const quantileDatasets = QUANTILE_LEVELS.map((level, idx) => ({
-    label: `Power law quantile ${level}%`,
-    data: quantilePoints[level],
-    borderWidth: level === 50 ? 2.2 : 1.7,
-    borderColor: quantileBorderColors[level],
-    backgroundColor: quantileBandColors[level],
-    pointRadius: 0,
-    spanGaps: true,
-    parsing: false,
-    fill: idx === 0 ? false : idx - 1,
-    order: 0,
-  }));
+  const quantileDatasets =
+    quantileMode === "off"
+      ? []
+      : QUANTILE_LEVELS.map((level, idx) => ({
+          label: `Power law quantile ${level}%`,
+          data: quantilePoints[level],
+          borderWidth: level === 50 ? 2.2 : 1.7,
+          borderColor: quantileBorderColors[level],
+          backgroundColor: quantileBandColors[level],
+          pointRadius: 0,
+          spanGaps: true,
+          parsing: false,
+          fill: idx === 0 ? false : idx - 1,
+          order: 0,
+        }));
 
   priceChart = new Chart(ctx, {
     type: "line",
@@ -795,11 +882,36 @@ async function fetchLiveBtceur() {
 
 // =============== INIT ===============
 
-function updateTodayKpis(A_AVG, B_EXP, quantileMultipliers) {
+function getRollingBandsForDate(dateStr, aAvg, bExp, rollingQuantileResiduals) {
+  const plMedian = pricePLDays(aAvg, bExp, dateStr);
+  const bands = {};
+  for (const level of QUANTILE_LEVELS) {
+    const residualShift =
+      rollingQuantileResiduals?.[level] ??
+      Math.log10(DEFAULT_QUANTILE_MULTIPLIERS[level] || 1);
+    bands[level] = plMedian * Math.pow(10, residualShift);
+  }
+  return sanitizeQuantileBands(bands, plMedian);
+}
+
+function updateTodayKpis(A_AVG, B_EXP, quantileMode, rollingQuantileResiduals, regressionModels) {
   const todayIso = new Date().toISOString().slice(0, 10);
   const dToday = daysSinceGenesisFromDateStr(todayIso);
   const todayMedian = pricePLDays(A_AVG, B_EXP, todayIso);
-  const todaySupport = todayMedian * (quantileMultipliers[10] || 1);
+  let todaySupport = todayMedian * (DEFAULT_QUANTILE_MULTIPLIERS[10] || 1);
+
+  if (quantileMode === "rolling") {
+    const bands = getRollingBandsForDate(
+      todayIso,
+      A_AVG,
+      B_EXP,
+      rollingQuantileResiduals
+    );
+    todaySupport = bands[10] ?? todaySupport;
+  } else {
+    const bands = getRegressionBandsForDate(todayIso, A_AVG, B_EXP, regressionModels);
+    todaySupport = bands[10] ?? todaySupport;
+  }
 
   setKpiText("kpi-pl-avg", formatMoneyEUR(todayMedian));
   setKpiText("kpi-pl-support", formatMoneyEUR(todaySupport));
@@ -833,7 +945,20 @@ document.addEventListener("DOMContentLoaded", () => {
   const B_EXP = latestFit ? latestFit.bExp : 5.5697;
   const A_AVG = latestFit ? latestFit.aCoef : 8.85116e-17;
   const A_LOWER = A_AVG * 0.4;
-  const quantileMultipliers = buildQuantileMultipliers(btcMonthlyCloses, A_AVG, B_EXP);
+  const quantileModeSlider = document.getElementById("quantile-mode-slider");
+  const quantileModeLabel = document.getElementById("quantile-mode-label");
+  const quantileModeValues = ["off", "rolling", "regression"];
+  const quantileModeText = {
+    off: "Uit",
+    rolling: "Rolling window",
+    regression: "Power regression",
+  };
+
+  let quantileMode = "regression";
+  if (quantileModeSlider) {
+    const initialIndex = Number(quantileModeSlider.value);
+    quantileMode = quantileModeValues[initialIndex] || "regression";
+  }
 
   const currentYear = new Date().getUTCFullYear();
   const maxProjectionYear = currentYear + 20;
@@ -852,7 +977,10 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // series opbouwen met die a/b
-  const priceData = buildPriceSeries(A_AVG, B_EXP, A_LOWER, quantileMultipliers, maxProjectionYear);
+  const priceSeries = buildPriceSeries(A_AVG, B_EXP, A_LOWER, maxProjectionYear);
+  const priceData = priceSeries.rows;
+  const rollingQuantileResiduals = priceSeries.rollingQuantileResiduals;
+  const regressionModels = priceSeries.regressionModels;
 
   const priceCtx = document
     .getElementById("btc-price-chart")
@@ -894,7 +1022,8 @@ document.addEventListener("DOMContentLoaded", () => {
       priceCtx,
       useYLog,
       useXLog,
-      filterPriceDataByYear(year)
+      filterPriceDataByYear(year),
+      quantileMode
     );
     createQuantileOscillatorChart(oscillatorCtx, filterPriceDataByYear(year));
   };
@@ -930,7 +1059,13 @@ document.addEventListener("DOMContentLoaded", () => {
   setKpiText("kpi-b-exp", latestFit ? latestFit.bExp.toFixed(4).replace(".", ",") : "-");
   setKpiText("kpi-r2", latestFit ? latestFit.r2.toFixed(3).replace(".", ",") : "-");
 
-  updateTodayKpis(A_AVG, B_EXP, quantileMultipliers);
+  updateTodayKpis(
+    A_AVG,
+    B_EXP,
+    quantileMode,
+    rollingQuantileResiduals,
+    regressionModels
+  );
 
   // toggle log/linear Y
   if (yLogToggle) {
@@ -949,6 +1084,30 @@ document.addEventListener("DOMContentLoaded", () => {
       setProjectionYear(
         projectionSlider ? projectionSlider.value : maxProjectionYear
       );
+    });
+  }
+
+  const setQuantileMode = (mode) => {
+    quantileMode = mode;
+    if (quantileModeLabel) {
+      quantileModeLabel.textContent = quantileModeText[mode] || mode;
+    }
+    setProjectionYear(projectionSlider ? projectionSlider.value : maxProjectionYear);
+    updateTodayKpis(
+      A_AVG,
+      B_EXP,
+      quantileMode,
+      rollingQuantileResiduals,
+      regressionModels
+    );
+  };
+
+  if (quantileModeSlider) {
+    setQuantileMode(quantileMode);
+    quantileModeSlider.addEventListener("input", (e) => {
+      const idx = Number(e.target.value);
+      const nextMode = quantileModeValues[idx] || "regression";
+      setQuantileMode(nextMode);
     });
   }
 
