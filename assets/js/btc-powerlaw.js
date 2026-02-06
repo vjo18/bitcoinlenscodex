@@ -147,6 +147,31 @@ function quantile(sortedArr, q) {
   return sortedArr[base] + rest * (next - sortedArr[base]);
 }
 
+function percentRankInc(sortedArr, x) {
+  // sortedArr moet gesorteerd zijn (oplopend)
+  const n = sortedArr.length;
+  if (!n) return null;
+  if (x <= sortedArr[0]) return 0;
+  if (x >= sortedArr[n - 1]) return 1;
+
+  // zoek interval [i, i+1] waarin x valt
+  let lo = 0, hi = n - 1;
+  while (lo + 1 < hi) {
+    const mid = (lo + hi) >> 1;
+    if (sortedArr[mid] <= x) lo = mid;
+    else hi = mid;
+  }
+
+  const a = sortedArr[lo];
+  const b = sortedArr[hi];
+  if (b === a) return lo / (n - 1);
+
+  const t = (x - a) / (b - a);
+  const idx = lo + t;
+  return idx / (n - 1);
+}
+
+
 function sanitizeQuantileMultipliers(rawMultipliers) {
   const sanitized = {};
   let previous = 0;
@@ -169,48 +194,6 @@ function getQuantileValue(row, level) {
   return row?.plAvg ?? null;
 }
 
-// =============== DATA PREP ===============
-
-// price = a * days^b
-function pricePLDays(a, b, dateStr) {
-  const d = daysSinceGenesisFromDateStr(dateStr);
-  return a * Math.pow(d, b);
-}
-
-// rollende fits: cumulatieve regressie tot en met elke maand
-function buildRollingFits(data) {
-  const sorted = [...data].sort(
-    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-  );
-
-  const results = [];
-  const xsAll = [];
-  const ysAll = [];
-
-  for (let i = 0; i < sorted.length; i++) {
-    const row = sorted[i];
-    const d = daysSinceGenesisFromDateStr(row.date);
-    if (d <= 0 || row.price <= 0) continue;
-
-    xsAll.push(Math.log10(d));
-    ysAll.push(Math.log10(row.price));
-
-    if (xsAll.length < 12) continue; // nog te weinig punten
-
-    const { A, B, r2 } = linearRegressionStats(xsAll, ysAll);
-
-    results.push({
-      date: row.date,
-      year: new Date(row.date + "T00:00:00Z").getUTCFullYear(),
-      bExp: B,
-      aCoef: Math.pow(10, A),
-      r2,
-      n: xsAll.length,
-    });
-  }
-
-  return results;
-}
 
 function buildQuantileMultipliers(data) {
   const sorted = [...(data ?? [])].sort((a, b) =>
@@ -242,6 +225,9 @@ function buildQuantileMultipliers(data) {
   }
 
   const sortedResiduals = residuals.sort((a, b) => a - b);
+  const plPercentile = percentRankInc(sortedResiduals, 0);   // 0..1
+  const plPercentilePct = plPercentile == null ? 50 : plPercentile * 100;
+
   if (!sortedResiduals.length) {
     console.warn("[btc-powerlaw] Geen geldige residuals → quantile multipliers fallback=1");
     return Object.fromEntries(QUANTILE_LEVELS.map((q) => [q, 1]));
@@ -255,12 +241,45 @@ function buildQuantileMultipliers(data) {
   }
 
   console.table(multipliers);
+  multipliers.__plPercentilePct = plPercentilePct;
+  multipliers.__sortedResiduals = sortedResiduals;
   return multipliers;
+}
+
+const OSC_LEVELS = [0, 10, 20, 50, 80, 90, 100];
+
+function quantileOscillatorFromBands(price, bands) {
+  if (!isFinite(price) || price <= 0 || !bands) return null;
+
+  // zorg dat we enkel levels nemen die bestaan
+  const levels = OSC_LEVELS.filter((q) => isFinite(bands[q]) && bands[q] > 0);
+  if (levels.length < 2) return null;
+
+  const lowQ = levels[0];
+  const highQ = levels[levels.length - 1];
+
+  if (price <= bands[lowQ]) return 0;
+  if (price >= bands[highQ]) return 100;
+
+  for (let i = 0; i < levels.length - 1; i++) {
+    const q1 = levels[i];
+    const q2 = levels[i + 1];
+    const p1 = bands[q1];
+    const p2 = bands[q2];
+
+    if (price >= p1 && price <= p2) {
+      const t = (price - p1) / (p2 - p1);        // 0..1
+      const q = q1 + t * (q2 - q1);              // bv 20..50
+      return Math.max(0, Math.min(100, q));
+    }
+  }
+
+  return null;
 }
 
 
 // prijs + quantile power law banden, mét projectie tot gekozen jaar
-function buildPriceSeries(aAvg, bExp, aLower, quantileMultipliers, endYear = 2054) {
+function buildPriceSeries(aAvg, bExp, aLower, quantileMultipliers, endYear = 2054, fitByDate = null) {
   const safeQuantileMultipliers = sanitizeQuantileMultipliers(quantileMultipliers);
   const cutoff = "2010-05-01";
 
@@ -273,29 +292,43 @@ function buildPriceSeries(aAvg, bExp, aLower, quantileMultipliers, endYear = 205
   // historische data
   for (const row of sorted) {
     if (row.date < cutoff) continue;
-    const plMedian = pricePLDays(aAvg, bExp, row.date);
+    // 1) Full-fit power law (middenlijn die je wil plotten)
+    const plMidFull = pricePLDays(aAvg, bExp, row.date);
+
+    // 2) Evolving fit (enkel voor quantile-bands)
+    const f = fitByDate?.get(row.date);
+    const aEvo = f?.aCoef ?? aAvg;
+    const bEvo = f?.bExp ?? bExp;
+    const plEvo = pricePLDays(aEvo, bEvo, row.date);
+
+
     const quantileBands = {};
 
     for (const level of QUANTILE_LEVELS) {
-      quantileBands[level] = plMedian * safeQuantileMultipliers[level];
+      quantileBands[level] = plEvo * safeQuantileMultipliers[level];
     }
 
     const bandLow = quantileBands[0];
     const bandHigh = quantileBands[100];
-    const oscillator =
-      row.price > 0 && isFinite(bandLow) && isFinite(bandHigh) && bandHigh > bandLow
-        ? ((row.price - bandLow) / (bandHigh - bandLow)) * 100
-        : null;
+    const price = Number(row.price);
+let oscillator = null;
+
+if (isFinite(price) && price > 0) {
+  const residualEvo = Math.log10(price) - Math.log10(plEvo); // exact Sheets O-kolom
+  const sr = quantileMultipliers.__sortedResiduals;
+  const pr = sr ? percentRankInc(sr, residualEvo) : null;    // 0..1
+  oscillator = pr == null ? null : pr * 100;                // 0..100
+}
 
     rows.push({
       date: row.date,
       price: row.price,
-      plMedian,
-      plAvg: plMedian,
-      plLower: pricePLDays(aLower, bExp, row.date),
+      plMidFull,         // voor plotten middenlijn
+      plEvo,             // optioneel bewaren voor debug/KPI
       quantileBands,
-      oscillator: oscillator == null ? null : Math.max(0, Math.min(100, oscillator)),
+      oscillator
     });
+
   }
 
   // projectie: alleen power-law lijnen (geen prijs) tot 2054
@@ -314,13 +347,12 @@ function buildPriceSeries(aAvg, bExp, aLower, quantileMultipliers, endYear = 205
     while (y < endYear || (y === endYear && m <= 12)) {
       const jsDate = new Date(Date.UTC(y, m - 1, 1));
       const dateStr = jsDate.toISOString().slice(0, 10);
+      const plMidFull = pricePLDays(aAvg, bExp, dateStr);
 
       rows.push({
         date: dateStr,
         price: null,
-        plMedian: pricePLDays(aAvg, bExp, dateStr),
-        plAvg: pricePLDays(aAvg, bExp, dateStr),
-        plLower: pricePLDays(aLower, bExp, dateStr),
+        plMidFull,
         quantileBands: QUANTILE_LEVELS.reduce((acc, level) => {
           acc[level] = pricePLDays(aAvg, bExp, dateStr) * safeQuantileMultipliers[level];
           return acc;
@@ -350,7 +382,6 @@ let oscillatorChart = null;
 function createPriceChart(ctx, yLog, xLog, priceData) {
   const pointsMarket = [];
   const pointsAvg = [];
-  const pointsLower = [];
   const quantilePoints = QUANTILE_LEVELS.reduce((acc, level) => {
     acc[level] = [];
     return acc;
@@ -370,8 +401,7 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
         date: row.date,
       });
     }
-    pointsAvg.push({ x: d, y: row.plAvg, date: row.date });
-    pointsLower.push({ x: d, y: row.plLower, date: row.date });
+    pointsAvg.push({ x: d, y: row.plMidFull, date: row.date });
   }
 
   // ✅ bepaal eerste echte datapunt (met price) en gebruik dat als x-min
@@ -405,11 +435,11 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
     data: quantilePoints[level],
     borderWidth: 1.7,
     borderColor: quantileBorderColors[level],
-    backgroundColor: quantileBandColors[level],
+    backgroundColor: "transparent",
     pointRadius: 0,
     spanGaps: true,
     parsing: false,
-    fill: idx === 0 ? false : idx - 1,
+    fill: false,
     order: 0,
   }));
 
@@ -429,17 +459,7 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
           parsing: false,
           order: 3,
         },
-        {
-          label: "Power law support",
-          data: pointsLower,
-          borderWidth: 1.5,
-          borderColor: "#2563eb",
-          borderDash: [2, 2],
-          pointRadius: 0,
-          spanGaps: true,
-          parsing: false,
-          order: 3,
-        },
+
         {
           label: "BTC maandelijkse close (EUR)",
           data: pointsMarket,
@@ -549,7 +569,7 @@ if (canvas) {
 
 }
 
-function createQuantileOscillatorChart(ctx, priceData) {
+function createQuantileOscillatorChart(ctx, priceData, refLevelPct = 50) {
   // Neem enkel punten waar oscillator bestaat
   const pts = priceData
     .map((row) => ({
@@ -602,8 +622,8 @@ function createQuantileOscillatorChart(ctx, priceData) {
         },
         // Referentielijn Q50 (midpoint tussen 0 en 100)
         {
-          label: "Q50",
-          data: values.map(() => 50),
+          label: `PL ≈ Q${refLevelPct.toFixed(1)}`,
+          data: values.map(() => refLevelPct),
           borderColor: "rgba(15, 23, 42, 0.35)",
           borderWidth: 1.2,
           borderDash: [6, 6],
@@ -611,6 +631,7 @@ function createQuantileOscillatorChart(ctx, priceData) {
           fill: false,
           order: 2,
         },
+
       ],
     },
     options: {
@@ -847,6 +868,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // eerst alle fits berekenen
   const rollingFits = buildRollingFits(btcMonthlyCloses);
+  const fitByDate = new Map();
+  for (const f of rollingFits) fitByDate.set(f.date, f);
+
   const latestFit = rollingFits.length
     ? rollingFits[rollingFits.length - 1]
     : null;
@@ -856,6 +880,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const A_AVG = latestFit ? latestFit.aCoef : 8.85116e-17;
   const A_LOWER = A_AVG * 0.4;
   const quantileMultipliers = buildQuantileMultipliers(btcMonthlyCloses);
+  const plRefPct = Number(quantileMultipliers.__plPercentilePct);
+  const plRefPctSafe = isFinite(plRefPct) ? plRefPct : 50;
+
 
   const currentYear = new Date().getUTCFullYear();
   const maxProjectionYear = currentYear + 20;
@@ -874,7 +901,8 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // series opbouwen met die a/b
-  const priceData = buildPriceSeries(A_AVG, B_EXP, A_LOWER, quantileMultipliers, maxProjectionYear);
+  const priceData = buildPriceSeries(A_AVG, B_EXP, A_LOWER, quantileMultipliers, maxProjectionYear, fitByDate);
+
 
   const priceCtx = document
     .getElementById("btc-price-chart")
@@ -918,7 +946,8 @@ document.addEventListener("DOMContentLoaded", () => {
       useXLog,
       filterPriceDataByYear(year)
     );
-    createQuantileOscillatorChart(oscillatorCtx, filterPriceDataByYear(year));
+    createQuantileOscillatorChart(oscillatorCtx, filterPriceDataByYear(year), plRefPctSafe);
+
   };
 
   // eerste render

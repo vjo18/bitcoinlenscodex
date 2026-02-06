@@ -122,8 +122,6 @@ permalink: /grafieken/btc-powerlaw/
   </div>
 </div>
 
-</div>
-
 <style>
 /* =======================================================================
    BTC Power Law – layout & styling
