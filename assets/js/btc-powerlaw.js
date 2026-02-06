@@ -936,7 +936,11 @@ document.addEventListener("DOMContentLoaded", () => {
       return year <= yearLimit;
     });
 
-  const setProjectionYear = (yearValue) => {
+    const filterPriceDataByDate = (dateLimit) =>
+      priceData.filter((row) => new Date(row.date + "T00:00:00Z") <= dateLimit);
+    const oscillatorData = filterPriceDataByDate(new Date());
+
+    const setProjectionYear = (yearValue) => {
     const year = Number(yearValue);
     if (!Number.isFinite(year)) return;
     if (projectionValue) projectionValue.textContent = year.toString();
@@ -946,12 +950,12 @@ document.addEventListener("DOMContentLoaded", () => {
       useXLog,
       filterPriceDataByYear(year)
     );
-    createQuantileOscillatorChart(oscillatorCtx, filterPriceDataByYear(year), plRefPctSafe);
 
   };
 
   // eerste render
   setProjectionYear(projectionSlider ? projectionSlider.value : maxProjectionYear);
+  createQuantileOscillatorChart(oscillatorCtx, oscillatorData, plRefPctSafe);
   createSlopeChart(slopeCtx, rollingFits);
   createR2Chart(r2Ctx, rollingFits);
 
