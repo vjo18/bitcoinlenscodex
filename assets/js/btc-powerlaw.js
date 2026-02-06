@@ -17,12 +17,19 @@ if (typeof Chart !== "undefined") {
 
 const GENESIS_MS = Date.UTC(2009, 0, 3); // 2009-01-03
 const EPS = 1e-9;
-const QUANTILE_LEVELS = [0, 10, 20, 50, 80, 90, 100];
+const QUANTILE_LEVELS = [0, 10, 20, 80, 90, 100];
+const QUANTILE_PERCENTILES = {
+  0: 0,
+  10: 0.1,
+  20: 0.2,
+  80: 0.8,
+  90: 0.9,
+  100: 1,
+};
 const DEFAULT_QUANTILE_MULTIPLIERS = {
   0: 0.35,
   10: 0.5,
   20: 0.6,
-  50: 0.9,
   80: 1.7,
   90: 2.5,
   100: 4.0,
@@ -205,32 +212,49 @@ function buildRollingFits(data) {
   return results;
 }
 
-function buildQuantileMultipliers(data, aAvg, bExp) {
-  const ratios = (data ?? [])
-    .filter((row) => row && row.date)
-    .map((row) => {
-      const price = Number(row.price);
-      if (!isFinite(price) || price <= 0) return null;
+function buildQuantileMultipliers(data) {
+  const sorted = [...(data ?? [])].sort((a, b) =>
+    new Date(a.date).getTime() - new Date(b.date).getTime()
+  );
 
-      const trend = pricePLDays(aAvg, bExp, row.date);
-      if (!isFinite(trend) || trend <= 0) return null;
+  const xsAll = [];
+  const ysAll = [];
+  const residuals = [];
 
-      return price / trend;
-    })
-    .filter((x) => isFinite(x) && x > 0)
-    .sort((a, b) => a - b);
+  for (const row of sorted) {
+    const price = Number(row?.price);
+    if (!row?.date || !isFinite(price) || price <= 0) continue;
 
-  if (!ratios.length) {
-    console.warn("[btc-powerlaw] Geen geldige ratios → quantile multipliers fallback=1");
+    const days = daysSinceGenesisFromDateStr(row.date);
+    if (!isFinite(days) || days <= 0) continue;
+
+    xsAll.push(Math.log10(days));
+    ysAll.push(Math.log10(price));
+
+    if (xsAll.length < 12) continue;
+
+    const { A, B } = linearRegressionStats(xsAll, ysAll);
+    const pl = Math.pow(10, A) * Math.pow(days, B);
+    if (!isFinite(pl) || pl <= 0) continue;
+
+    const residual = Math.log10(price) - Math.log10(pl);
+    if (isFinite(residual)) residuals.push(residual);
+  }
+
+  const sortedResiduals = residuals.sort((a, b) => a - b);
+  if (!sortedResiduals.length) {
+    console.warn("[btc-powerlaw] Geen geldige residuals → quantile multipliers fallback=1");
     return Object.fromEntries(QUANTILE_LEVELS.map((q) => [q, 1]));
   }
 
   const multipliers = {};
   for (const level of QUANTILE_LEVELS) {
-    multipliers[level] = quantile(ratios, level / 100);
+    const percentile = QUANTILE_PERCENTILES[level];
+    const residual = quantile(sortedResiduals, percentile);
+    multipliers[level] = Math.pow(10, residual);
   }
 
-  console.table(multipliers); // debug: je wil hier spreiding zien
+  console.table(multipliers);
   return multipliers;
 }
 
@@ -362,7 +386,6 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
     0: "rgba(30, 41, 59, 0.18)",
     10: "rgba(37, 99, 235, 0.16)",
     20: "rgba(59, 130, 246, 0.14)",
-    50: "rgba(16, 185, 129, 0.15)",
     80: "rgba(249, 115, 22, 0.14)",
     90: "rgba(239, 68, 68, 0.14)",
     100: "rgba(127, 29, 29, 0.16)",
@@ -372,7 +395,6 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
     0: "#334155",
     10: "#2563eb",
     20: "#3b82f6",
-    50: "#10b981",
     80: "#f97316",
     90: "#ef4444",
     100: "#7f1d1d",
@@ -381,7 +403,7 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
   const quantileDatasets = QUANTILE_LEVELS.map((level, idx) => ({
     label: `Power law quantile ${level}%`,
     data: quantilePoints[level],
-    borderWidth: level === 50 ? 2.2 : 1.7,
+    borderWidth: 1.7,
     borderColor: quantileBorderColors[level],
     backgroundColor: quantileBandColors[level],
     pointRadius: 0,
@@ -578,10 +600,10 @@ function createQuantileOscillatorChart(ctx, priceData) {
           fill: false,
           order: 1,
         },
-        // Referentielijn Q60 (optioneel maar matcht de post)
+        // Referentielijn Q50 (midpoint tussen 0 en 100)
         {
-          label: "Q60",
-          data: values.map(() => 60),
+          label: "Q50",
+          data: values.map(() => 50),
           borderColor: "rgba(15, 23, 42, 0.35)",
           borderWidth: 1.2,
           borderDash: [6, 6],
@@ -833,7 +855,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const B_EXP = latestFit ? latestFit.bExp : 5.5697;
   const A_AVG = latestFit ? latestFit.aCoef : 8.85116e-17;
   const A_LOWER = A_AVG * 0.4;
-  const quantileMultipliers = buildQuantileMultipliers(btcMonthlyCloses, A_AVG, B_EXP);
+  const quantileMultipliers = buildQuantileMultipliers(btcMonthlyCloses);
 
   const currentYear = new Date().getUTCFullYear();
   const maxProjectionYear = currentYear + 20;
