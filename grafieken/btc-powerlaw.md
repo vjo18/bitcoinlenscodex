@@ -84,14 +84,21 @@ permalink: /grafieken/btc-powerlaw/
   </div>
 </div>
 
-<div class="btc-powerlaw-charts">
-<div class="chart-block">
-  <h3>BTC prijs + power law quantile-banden</h3>
-  <p class="chart-subtitle">Maandelijkse closes in EUR • quantiles: 0, 10, 20, 50, 80, 90, 100</p>
+<div class="chart-block fullscreenable" id="btc-price-block">
+  <div class="chart-block-header">
+    <div>
+      <h3>BTC prijs + power law quantile-banden</h3>
+      <p class="chart-subtitle">Maandelijkse closes in EUR • quantiles: 0, 10, 20, 50, 80, 90, 100</p>
+    </div>
+
+    <button class="fullscreen-btn" id="btc-price-fullscreen-btn" title="Fullscreen">⛶</button>
+  </div>
+
   <div class="chart-canvas">
     <canvas id="btc-price-chart"></canvas>
   </div>
 </div>
+
 
 <div class="chart-block">
   <h3>Quantile Oscillator</h3>
@@ -429,11 +436,64 @@ body[data-theme="dark"] .chart-block h3 {
 body[data-theme="dark"] .chart-subtitle {
   color: #9ca3af;
 }
+
+/* Header rij met fullscreen knop */
+.chart-block-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* Fullscreen knop */
+.fullscreen-btn {
+  flex: 0 0 auto;
+  z-index: 30;
+  padding: 6px 10px;
+  font-size: 14px;
+  border-radius: 8px;
+  border: 1px solid #cbd5f5;
+  background: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+}
+
+body[data-theme="dark"] .fullscreen-btn {
+  border-color: rgba(148, 163, 184, 0.5);
+  background: rgba(15, 23, 42, 0.8);
+  color: #e5e7eb;
+}
+
+/* Fullscreen card */
+.chart-block.fullscreenable:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  border-radius: 0;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* In fullscreen: canvas neemt alle resterende hoogte */
+.chart-block.fullscreenable:fullscreen .chart-canvas {
+  flex: 1 1 auto;
+  height: auto;    /* override vaste hoogte */
+  min-height: 0;
+}
+
+.chart-block.fullscreenable:fullscreen canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+
 </style>
 
 
 <!-- Chart.js van CDN -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+
 
 <!-- Losse datafile met maandelijkse closes -->
 <script src="{{ '/assets/js/btc-powerlaw-data.js' | relative_url }}"></script>

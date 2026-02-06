@@ -206,21 +206,34 @@ function buildRollingFits(data) {
 }
 
 function buildQuantileMultipliers(data, aAvg, bExp) {
-  const ratios = data
-    .filter((row) => row.price > 0)
+  const ratios = (data ?? [])
+    .filter((row) => row && row.date)
     .map((row) => {
+      const price = Number(row.price);
+      if (!isFinite(price) || price <= 0) return null;
+
       const trend = pricePLDays(aAvg, bExp, row.date);
-      return row.price / (trend || EPS);
+      if (!isFinite(trend) || trend <= 0) return null;
+
+      return price / trend;
     })
     .filter((x) => isFinite(x) && x > 0)
     .sort((a, b) => a - b);
+
+  if (!ratios.length) {
+    console.warn("[btc-powerlaw] Geen geldige ratios → quantile multipliers fallback=1");
+    return Object.fromEntries(QUANTILE_LEVELS.map((q) => [q, 1]));
+  }
 
   const multipliers = {};
   for (const level of QUANTILE_LEVELS) {
     multipliers[level] = quantile(ratios, level / 100);
   }
-  return sanitizeQuantileMultipliers(multipliers);
+
+  console.table(multipliers); // debug: je wil hier spreiding zien
+  return multipliers;
 }
+
 
 // prijs + quantile power law banden, mét projectie tot gekozen jaar
 function buildPriceSeries(aAvg, bExp, aLower, quantileMultipliers, endYear = 2054) {
@@ -374,8 +387,8 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
     pointRadius: 0,
     spanGaps: true,
     parsing: false,
-    fill: idx === 0 ? false : "-1",
-    order: 2,
+    fill: idx === 0 ? false : idx - 1,
+    order: 0,
   }));
 
   priceChart = new Chart(ctx, {
@@ -413,94 +426,118 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
           pointRadius: 0,
           spanGaps: false,
           parsing: false,
-          order: 1,
+          order: 3,
         },
       ],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+
       interaction: {
         mode: "index",
         intersect: false,
       },
+
+      plugins: {
+        legend: { display: true, position: "bottom" },
+        tooltip: {
+          callbacks: {
+            title: (items) => items?.[0]?.raw?.date ?? "",
+            label: (context) =>
+              `${context.dataset.label}: ${formatMoneyEUR(context.parsed.y)}`,
+          },
+        },
+
+        zoom: {
+          limits: {
+            x: { min: "original", max: "original" },
+            // y blijft vast: geen zoom, geen pan
+          },
+
+          pan: {
+            enabled: true,
+            mode: "x",
+            // optioneel: modifierKey: "ctrl",
+          },
+
+          zoom: {
+            wheel: { enabled: true },
+            pinch: { enabled: true },
+            drag: {
+              enabled: true,
+              backgroundColor: "rgba(37, 99, 235, 0.15)",
+              borderColor: "#2563eb",
+              borderWidth: 1,
+            },
+            mode: "x", // ✅ alleen X (tijd)
+          },
+        },
+      },
+
+
       scales: {
         x: {
           type: xLog ? "logarithmic" : "linear",
-          // ✅ start x-as bij eerste datapunt, ook in log-modus
           min: minDays,
           ticks: {
             maxTicksLimit: 12,
-            callback: (value) => formatXTickDays(value), // toont alleen jaartal
+            callback: (value) => formatXTickDays(value),
           },
-          grid: {
-            color: "rgba(148, 163, 184, 0.3)",
-          },
+          grid: { color: "rgba(148, 163, 184, 0.3)" },
           title: {
             display: true,
             text: "Days since genesis",
           },
         },
+
         y: {
           type: yLog ? "logarithmic" : "linear",
-          min: 0.1,
+          min: yLog ? 0.1 : 0,
           ticks: {
             callback: (value) => formatYTick(value),
           },
-          grid: {
-            color: "rgba(148, 163, 184, 0.3)",
-          },
+          grid: { color: "rgba(148, 163, 184, 0.3)" },
           title: {
             display: true,
             text: "BTC prijs (EUR)",
           },
         },
       },
-      plugins: {
-        legend: {
-          display: true,
-          position: "bottom",
-        },
-        tooltip: {
-          callbacks: {
-            title: (items) => {
-              const raw = items[0].raw;
-              return raw && raw.date ? raw.date : "";
-            },
-            label: (context) =>
-              `${context.dataset.label}: ${formatMoneyEUR(
-                context.parsed.y
-              )}`,
-          },
-        },
-      },
     },
+
   });
+
+// Double-click reset zoom (alleen op de price chart canvas)
+const canvas = priceChart?.canvas;
+
+if (canvas) {
+  // voorkom dubbele listeners bij re-render (je destroy/recreate chart)
+  if (canvas._dblClickZoomResetHandler) {
+    canvas.removeEventListener("dblclick", canvas._dblClickZoomResetHandler);
+  }
+
+  canvas._dblClickZoomResetHandler = () => {
+    if (priceChart) priceChart.resetZoom();
+  };
+
+  canvas.addEventListener("dblclick", canvas._dblClickZoomResetHandler);
+}
+
+
 }
 
 function createQuantileOscillatorChart(ctx, priceData) {
-  const pointsOscillator = priceData
-    .map((row) => {
-      const low = getQuantileValue(row, 0);
-      const high = getQuantileValue(row, 100);
-      const fallbackOscillator =
-        row.price > 0 && isFinite(low) && isFinite(high) && high > low
-          ? ((row.price - low) / (high - low)) * 100
-          : null;
-
-      const y = isFinite(row.oscillator)
-        ? row.oscillator
-        : fallbackOscillator;
-
-      return {
-        x: daysSinceGenesisFromDateStr(row.date),
-        y,
-        date: row.date,
-      };
-    })
+  // Neem enkel punten waar oscillator bestaat
+  const pts = priceData
+    .map((row) => ({
+      date: row.date,
+      y: row.oscillator, // 0..100
+    }))
     .filter((p) => isFinite(p.y) && p.y >= 0 && p.y <= 100);
 
-  if (!pointsOscillator.length) {
+  if (!pts.length) {
+    console.warn("[btc-powerlaw] Oscillator heeft geen geldige punten om te plotten.");
     if (oscillatorChart) {
       oscillatorChart.destroy();
       oscillatorChart = null;
@@ -508,43 +545,49 @@ function createQuantileOscillatorChart(ctx, priceData) {
     return;
   }
 
-  const firstWithPrice = pointsOscillator.find((p) => p.y != null);
-  const minDays = firstWithPrice ? firstWithPrice.x : 1;
+  // Labels = maandelijkse datums (category scale), ticks tonen enkel jaar
+  const labels = pts.map((p) => p.date);
+  const values = pts.map((p) => p.y);
 
   if (oscillatorChart) oscillatorChart.destroy();
 
   oscillatorChart = new Chart(ctx, {
     type: "line",
     data: {
+      labels,
       datasets: [
+        // "Glow" laag (dik + transparant) onder de echte lijn
         {
-          label: "Quantile oscillator",
-          data: pointsOscillator,
-          borderColor: "#7c3aed",
-          backgroundColor: "rgba(124, 58, 237, 0.15)",
-          borderWidth: 1.8,
+          label: "Quantile (glow)",
+          data: values,
+          borderColor: "rgba(37, 99, 235, 0.22)",
+          borderWidth: 10,
           pointRadius: 0,
-          spanGaps: false,
-          fill: true,
-          parsing: false,
+          tension: 0.15,
+          fill: false,
+          order: 0,
         },
+        // Hoofdlijn
         {
-          label: "80% zone",
-          data: pointsOscillator.map((p) => ({ ...p, y: 80 })),
-          borderColor: "rgba(239, 68, 68, 0.65)",
-          borderDash: [6, 4],
-          borderWidth: 1,
+          label: "Bitcoin Price In Quantiles",
+          data: values,
+          borderColor: "#2563eb",
+          borderWidth: 2.2,
           pointRadius: 0,
-          parsing: false,
+          tension: 0.15,
+          fill: false,
+          order: 1,
         },
+        // Referentielijn Q60 (optioneel maar matcht de post)
         {
-          label: "20% zone",
-          data: pointsOscillator.map((p) => ({ ...p, y: 20 })),
-          borderColor: "rgba(37, 99, 235, 0.65)",
-          borderDash: [6, 4],
-          borderWidth: 1,
+          label: "Q60",
+          data: values.map(() => 60),
+          borderColor: "rgba(15, 23, 42, 0.35)",
+          borderWidth: 1.2,
+          borderDash: [6, 6],
           pointRadius: 0,
-          parsing: false,
+          fill: false,
+          order: 2,
         },
       ],
     },
@@ -554,11 +597,16 @@ function createQuantileOscillatorChart(ctx, priceData) {
       interaction: { mode: "index", intersect: false },
       scales: {
         x: {
-          type: "linear",
-          min: minDays,
+          type: "category",
           ticks: {
-            maxTicksLimit: 12,
-            callback: (value) => formatXTickDays(value),
+            maxTicksLimit: 14,
+            callback: (value) => {
+              // value = index op category scale
+              const idx = typeof value === "number" ? value : Number(value);
+              const d = labels[idx];
+              // toon enkel jaar op de as
+              return d ? d.slice(0, 4) : "";
+            },
           },
           grid: { color: "rgba(148, 163, 184, 0.3)" },
         },
@@ -566,24 +614,18 @@ function createQuantileOscillatorChart(ctx, priceData) {
           min: 0,
           max: 100,
           ticks: {
-            callback: (value) => `${value}%`,
+            stepSize: 10,
+            callback: (v) => `Q${v}`,
           },
           grid: { color: "rgba(148, 163, 184, 0.3)" },
-          title: {
-            display: true,
-            text: "Positie binnen quantile-banden",
-          },
         },
       },
       plugins: {
-        legend: { display: true, position: "bottom" },
+        legend: { display: false }, // zoals je screenshot
         tooltip: {
           callbacks: {
-            title: (items) => items[0]?.raw?.date ?? "",
-            label: (context) =>
-              context.dataset.label === "Quantile oscillator"
-                ? `${context.dataset.label}: ${context.parsed.y?.toFixed(1)}%`
-                : context.dataset.label,
+            title: (items) => labels[items[0].dataIndex] ?? "",
+            label: (ctx) => `Q${Number(ctx.parsed.y).toFixed(1)}`,
           },
         },
       },
@@ -915,4 +957,39 @@ document.addEventListener("DOMContentLoaded", () => {
       setProjectionYear(e.target.value);
     });
   }
+
+  const fsBtn = document.getElementById("btc-price-fullscreen-btn");
+const fsBlock = document.getElementById("btc-price-block");
+
+if (fsBtn && fsBlock) {
+  const updateBtn = () => {
+    const isFs = document.fullscreenElement === fsBlock;
+    fsBtn.textContent = isFs ? "⤫" : "⛶";
+    fsBtn.title = isFs ? "Exit fullscreen" : "Fullscreen";
+  };
+
+  fsBtn.addEventListener("click", async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await fsBlock.requestFullscreen();
+      }
+      updateBtn();
+    } catch (e) {
+      console.warn("Fullscreen fout:", e);
+    }
+  });
+
+  document.addEventListener("fullscreenchange", () => {
+    updateBtn();
+    if (priceChart) {
+      setTimeout(() => priceChart.resize(), 150);
+    }
+  });
+
+  updateBtn();
+}
+
+
 });
