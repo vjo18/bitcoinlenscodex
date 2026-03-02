@@ -13,3 +13,4 @@ Hier vind je een overzicht van de calculators die verschillende toepassingen ron
 - [BTC Price Projection]({{ '/calculators/btc-price-projection/' | relative_url }})
 - [Financial Freedom Year]({{ '/calculators/financial-freedom-year/' | relative_url }})
 - [Inflation Effect]({{ '/calculators/inflation-effect/' | relative_url }})
+- [BTC Win-for-Life (EUR)]({{ '/calculators/btc-win-for-life/' | relative_url }})
