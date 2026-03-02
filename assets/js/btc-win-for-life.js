@@ -212,7 +212,7 @@ function initBtcWinForLife() {
     const reqIndexedBtc = findRequiredBTCForRoutIndexed({
       aLower,
       aAvg,
-      useLowerPostRetire: false,
+      useLowerPostRetire,
       bExp: powerLaw.bExp,
       retire: { y: yr, m: mr },
       targetROutBase: rOut,
