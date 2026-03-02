@@ -207,15 +207,17 @@ function initBtcWinForLife() {
     const aAvg = powerLaw.aMedian;
     const aLower = powerLaw.aP10;
 
+    const targetYears = finiteHorizonMode ? horizonYears : 200;
+
     const reqIndexedBtc = findRequiredBTCForRoutIndexed({
       aLower,
       aAvg,
-      useLowerPostRetire,
+      useLowerPostRetire: false,
       bExp: powerLaw.bExp,
       retire: { y: yr, m: mr },
       targetROutBase: rOut,
       inflAnnual,
-      horizonYears,
+      horizonYears: targetYears,
     });
 
     const sim = runSimulation({
@@ -227,19 +229,7 @@ function initBtcWinForLife() {
       initialBTC: reqIndexedBtc,
       rOutBase: rOut,
       inflAnnual,
-      horizonYears,
-    });
-
-    const maxRout = findMaxRout({
-      aLower,
-      aAvg,
-      useLowerPostRetire,
-      bExp: powerLaw.bExp,
-      retire: { y: yr, m: mr },
-      initialBTC: reqIndexedBtc,
-      inflAnnual,
-      horizonYears,
-      finiteHorizonMode,
+      horizonYears: targetYears,
     });
 
     const priceAtRetire = pricePLDays(useLowerPostRetire ? aLower : aAvg, powerLaw.bExp, yr, mr);
@@ -251,7 +241,6 @@ function initBtcWinForLife() {
       <div class="calc-kpi"><div class="label">b exponent (latest EUR fit)</div><div class="value">${powerLaw.bExp.toFixed(4)}</div></div>
       <div class="calc-kpi"><div class="label">Prijs @ retirement</div><div class="value">${formatMoneyEUR(priceAtRetire, 0)}</div></div>
       <div class="calc-kpi"><div class="label">Required BTC (indexed)</div><div class="value">${reqIndexedBtc.toFixed(6)}</div></div>
-            <div class="calc-kpi"><div class="label">Max sustainable r_out</div><div class="value">${formatMoneyEUR(maxRout, 0)} / mo</div></div>
       <div class="calc-kpi"><div class="label">Total withdrawn</div><div class="value">${formatMoneyEUR(sim.summary.totalWithdrawnUsd, 0)}</div></div>
       <div class="calc-kpi"><div class="label">Exhausted?</div><div class="value">${exhaustedLabel}</div></div>
     `;
