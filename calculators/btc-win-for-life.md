@@ -10,7 +10,7 @@ Deze calculator gebruikt de **meest recente BTC power-law fit in EUR** op basis 
 - **Percentiel 10** = conservatief (lower bound)
 - **Percentiel 50** = gemiddeld (mediaan)
 
-## Calculator 1 — BTC Balance & Portfolio Value
+## Calculator — BTC Balance & Portfolio Value
 <div class="calc-card">
   <div class="calc-grid">
     <label>Retire year<input id="wfl-retire-year" type="number" value="2030" /></label>
@@ -41,11 +41,17 @@ Deze calculator gebruikt de **meest recente BTC power-law fit in EUR** op basis 
   <div class="calc-grid-2">
     <div>
       <div class="mini-title">BTC balance</div>
-      <svg id="wfl-chart-btc" class="mini-chart" viewBox="0 0 520 240" preserveAspectRatio="none"></svg>
+      <div class="chart-wrap">
+        <svg id="wfl-chart-btc" class="mini-chart" viewBox="0 0 560 260"></svg>
+        <div id="wfl-tooltip-btc" class="chart-tooltip"></div>
+      </div>
     </div>
     <div>
       <div class="mini-title">EUR value</div>
-      <svg id="wfl-chart-eur" class="mini-chart" viewBox="0 0 520 240" preserveAspectRatio="none"></svg>
+      <div class="chart-wrap">
+        <svg id="wfl-chart-eur" class="mini-chart" viewBox="0 0 560 260"></svg>
+        <div id="wfl-tooltip-eur" class="chart-tooltip"></div>
+      </div>
     </div>
   </div>
 
@@ -62,17 +68,6 @@ Deze calculator gebruikt de **meest recente BTC power-law fit in EUR** op basis 
   </div>
 </div>
 
-## Calculator 2 — Required BTC vs retire year
-<div class="calc-card">
-  <div class="calc-grid">
-    <label>Desired r_out (€ / mo)<input id="wfl-rby-target-rout" type="number" value="6000" step="100" /></label>
-    <label>Projectie in jaren (vanaf retire year)<input id="wfl-rby-years-ahead" type="number" value="40" min="1" max="80" /></label>
-  </div>
-
-  <svg id="wfl-chart-required" class="mini-chart" viewBox="0 0 1040 260" preserveAspectRatio="none"></svg>
-  <p id="wfl-rby-summary" class="calc-summary"></p>
-</div>
-
 <style>
 .calc-card { border: 1px solid #e2e8f0; border-radius: 16px; padding: 1.5rem; background: #fff; box-shadow: 0 10px 30px rgba(15,23,42,.08); margin-bottom: 1rem; }
 .calc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
@@ -84,10 +79,11 @@ Deze calculator gebruikt de **meest recente BTC power-law fit in EUR** op basis 
 .calc-kpi .value { font-size:1rem; font-weight:600; color:#0f172a; }
 .calc-grid-2 { display:grid; grid-template-columns: repeat(auto-fit,minmax(300px,1fr)); gap:1rem; }
 .mini-title { font-size:.85rem; color:#334155; margin-bottom:.25rem; }
+.chart-wrap { position: relative; }
 .mini-chart { width:100%; height:240px; border:1px solid #e2e8f0; border-radius:10px; background:#fff; }
+.chart-tooltip { position:absolute; pointer-events:none; background:#0f172a; color:white; font-size:.75rem; padding:.3rem .45rem; border-radius:6px; display:none; z-index:4; white-space:nowrap; }
 .calc-table table { width:100%; border-collapse:collapse; font-size:.9rem; }
 .calc-table th,.calc-table td { border-bottom:1px solid #e2e8f0; padding:.4rem .25rem; text-align:left; }
-.calc-summary { margin-top:.75rem; font-size:.92rem; color:#1e293b; }
 </style>
 
 <script src="{{ '/assets/js/btc-powerlaw-data.js' | relative_url }}"></script>

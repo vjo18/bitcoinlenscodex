@@ -59,11 +59,7 @@ function buildLatestEurPowerLawParams() {
   }
 
   if (xs.length < 12) {
-    return {
-      bExp: 5.5697,
-      aMedian: 8.85116e-17,
-      aP10: 8.85116e-17 * 0.4,
-    };
+    return { bExp: 5.5697, aMedian: 8.85116e-17, aP10: 8.85116e-17 * 0.4 };
   }
 
   const { A, B } = linearRegressionStats(xs, ys);
@@ -78,80 +74,110 @@ function buildLatestEurPowerLawParams() {
     .filter((r) => Number.isFinite(r))
     .sort((a, b) => a - b);
 
-  const q10 = quantile(residuals, 0.1);
-  const q50 = quantile(residuals, 0.5);
-
   return {
     bExp: B,
-    aMedian: aLine * Math.pow(10, q50),
-    aP10: aLine * Math.pow(10, q10),
+    aMedian: aLine * Math.pow(10, quantile(residuals, 0.5)),
+    aP10: aLine * Math.pow(10, quantile(residuals, 0.1)),
   };
 }
 
-function findRequiredBTCForRoutIndexed({
-  aLower,
-  aAvg,
-  useLowerPostRetire,
-  bExp,
-  retire,
-  targetROutBase,
-  inflAnnual,
-  horizonYears,
-}) {
+function findRequiredBTCForRoutIndexed(params) {
   let low = 0;
   let high = 1_000_000;
   for (let i = 0; i < 50; i += 1) {
     const mid = (low + high) / 2;
-    const sim = runSimulation({
-      aLower,
-      aAvg,
-      useLowerPostRetire,
-      bExp,
-      retire,
-      initialBTC: mid,
-      rOutBase: targetROutBase,
-      inflAnnual,
-      horizonYears,
-    });
-
+    const sim = runSimulation({ ...params, initialBTC: mid, rOutBase: params.targetROutBase });
     if (sim.exhaustedAt !== null) low = mid;
     else high = mid;
-
     if (high - low < 1e-6) break;
   }
   return high;
 }
 
-function drawSimpleLineChart(svgEl, values) {
-  if (!svgEl) return;
-  const width = 1040;
-  const height = 260;
-  const pad = 20;
-  const w = width - pad * 2;
-  const h = height - pad * 2;
+function fmtShort(v) {
+  if (!Number.isFinite(v)) return "-";
+  if (Math.abs(v) >= 1_000_000) return (v / 1_000_000).toFixed(1) + "M";
+  if (Math.abs(v) >= 1_000) return (v / 1_000).toFixed(1) + "k";
+  return v.toFixed(2);
+}
 
-  const arr = values.filter((v) => Number.isFinite(v));
-  if (!arr.length) {
+function drawInteractiveLineChart({ svgEl, tooltipEl, labels, values, yFormat }) {
+  if (!svgEl) return;
+  const width = 560;
+  const height = 260;
+  const m = { t: 12, r: 10, b: 30, l: 52 };
+  const w = width - m.l - m.r;
+  const h = height - m.t - m.b;
+
+  const pointsRaw = values.map((v, i) => ({ i, v })).filter((p) => Number.isFinite(p.v));
+  if (!pointsRaw.length) {
     svgEl.innerHTML = "";
     return;
   }
 
-  const minV = Math.min(...arr);
-  const maxV = Math.max(...arr);
-  const den = Math.max(EPS, maxV - minV);
+  const minY = Math.min(...pointsRaw.map((p) => p.v));
+  const maxY = Math.max(...pointsRaw.map((p) => p.v));
+  const denY = Math.max(EPS, maxY - minY);
 
-  const points = arr
-    .map((v, i) => {
-      const x = pad + (i / Math.max(1, arr.length - 1)) * w;
-      const y = pad + (1 - (v - minV) / den) * h;
-      return `${x},${y}`;
-    })
-    .join(" ");
+  const xOf = (i) => m.l + (i / Math.max(1, values.length - 1)) * w;
+  const yOf = (v) => m.t + (1 - (v - minY) / denY) * h;
+
+  const poly = pointsRaw.map((p) => `${xOf(p.i)},${yOf(p.v)}`).join(" ");
+
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map((t) => minY + t * (maxY - minY));
+  const xTickIdx = [0, 0.25, 0.5, 0.75, 1].map((t) => Math.round(t * (labels.length - 1)));
+
+  let grid = "";
+  for (const yv of yTicks) {
+    const y = yOf(yv);
+    grid += `<line x1="${m.l}" y1="${y}" x2="${width - m.r}" y2="${y}" stroke="#e2e8f0"/>`;
+    grid += `<text x="${m.l - 6}" y="${y + 4}" text-anchor="end" font-size="10" fill="#475569">${fmtShort(yv)}</text>`;
+  }
+  for (const idx of xTickIdx) {
+    const x = xOf(idx);
+    grid += `<line x1="${x}" y1="${m.t}" x2="${x}" y2="${height - m.b}" stroke="#e2e8f0"/>`;
+    grid += `<text x="${x}" y="${height - 10}" text-anchor="middle" font-size="10" fill="#475569">${labels[idx] ?? ""}</text>`;
+  }
 
   svgEl.innerHTML = `
     <rect x="0" y="0" width="${width}" height="${height}" fill="white"></rect>
-    <polyline fill="none" stroke="#1d4ed8" stroke-width="2" points="${points}"></polyline>
+    ${grid}
+    <line x1="${m.l}" y1="${height - m.b}" x2="${width - m.r}" y2="${height - m.b}" stroke="#64748b"/>
+    <line x1="${m.l}" y1="${m.t}" x2="${m.l}" y2="${height - m.b}" stroke="#64748b"/>
+    <polyline fill="none" stroke="#1d4ed8" stroke-width="2" points="${poly}"></polyline>
+    <circle id="hover-dot" r="4" fill="#1d4ed8" cx="-50" cy="-50"></circle>
   `;
+
+  if (!tooltipEl) return;
+  const dot = svgEl.querySelector("#hover-dot");
+
+  svgEl.onmousemove = (ev) => {
+    const rect = svgEl.getBoundingClientRect();
+    const rx = ((ev.clientX - rect.left) / rect.width) * width;
+    const idx = Math.min(values.length - 1, Math.max(0, Math.round(((rx - m.l) / w) * (values.length - 1))));
+    const val = values[idx];
+    if (!Number.isFinite(val)) return;
+
+    const cx = xOf(idx);
+    const cy = yOf(val);
+    if (dot) {
+      dot.setAttribute("cx", cx);
+      dot.setAttribute("cy", cy);
+    }
+
+    tooltipEl.style.display = "block";
+    tooltipEl.style.left = `${(cx / width) * rect.width + 8}px`;
+    tooltipEl.style.top = `${(cy / height) * rect.height - 10}px`;
+    tooltipEl.textContent = `${labels[idx]}: ${yFormat(val)}`;
+  };
+
+  svgEl.onmouseleave = () => {
+    tooltipEl.style.display = "none";
+    if (dot) {
+      dot.setAttribute("cx", -50);
+      dot.setAttribute("cy", -50);
+    }
+  };
 }
 
 function initBtcWinForLife() {
@@ -167,13 +193,6 @@ function initBtcWinForLife() {
   const horizonModeSelect = document.getElementById("wfl-horizon-mode");
   const kpisEl = document.getElementById("wfl-kpis");
   const tableBody = document.getElementById("wfl-table-body");
-  const btcChartEl = document.getElementById("wfl-chart-btc");
-  const eurChartEl = document.getElementById("wfl-chart-eur");
-
-  const targetROutInput = document.getElementById("wfl-rby-target-rout");
-  const yearsAheadInput = document.getElementById("wfl-rby-years-ahead");
-  const requiredChartEl = document.getElementById("wfl-chart-required");
-  const requiredSummaryEl = document.getElementById("wfl-rby-summary");
 
   if (!yearInput) return;
 
@@ -184,12 +203,11 @@ function initBtcWinForLife() {
     const rOut = parseFloat(routInput.value || "0");
     const inflAnnual = (parseFloat(inflInput.value || "0") || 0) / 100;
     const horizonYears = parseInt(horizonInput.value || "1", 10);
-    const selectedPercentile = percentileSelect.value === "10" ? "10" : "50";
+    const useLowerPostRetire = percentileSelect.value === "10";
     const finiteHorizonMode = horizonModeSelect.value === "horizon";
 
     const aAvg = powerLaw.aMedian;
     const aLower = powerLaw.aP10;
-    const useLowerPostRetire = selectedPercentile === "10";
 
     const sim = runSimulation({
       aLower,
@@ -226,13 +244,7 @@ function initBtcWinForLife() {
       finiteHorizonMode,
     });
 
-    const priceAtRetire = pricePLDays(
-      useLowerPostRetire ? aLower : aAvg,
-      powerLaw.bExp,
-      yr,
-      mr
-    );
-
+    const priceAtRetire = pricePLDays(useLowerPostRetire ? aLower : aAvg, powerLaw.bExp, yr, mr);
     const exhaustedLabel = sim.exhaustedAt
       ? `${sim.exhaustedAt.y}-${String(sim.exhaustedAt.m).padStart(2, "0")}`
       : "No (within horizon)";
@@ -247,72 +259,31 @@ function initBtcWinForLife() {
       <div class="calc-kpi"><div class="label">Exhausted?</div><div class="value">${exhaustedLabel}</div></div>
     `;
 
-    tableBody.innerHTML = sim.data
-      .slice(0, 240)
-      .map(
-        (d) => `
-        <tr>
-          <td>${d.year}</td>
-          <td>${d.month}</td>
-          <td>${formatMoneyEUR(d.price, 0)}</td>
-          <td>${d.sellBtc ? d.sellBtc.toFixed(6) : ""}</td>
-          <td>${d.rOutThisMonth ? formatMoneyEUR(d.rOutThisMonth, 0) : ""}</td>
-          <td>${d.btc.toFixed(6)}</td>
-          <td>${formatMoneyEUR(d.usdValue, 0)}</td>
-        </tr>
-      `
-      )
+    const rows = sim.data.slice(0, 240);
+    tableBody.innerHTML = rows
+      .map((d) => `
+        <tr><td>${d.year}</td><td>${d.month}</td><td>${formatMoneyEUR(d.price, 0)}</td><td>${d.sellBtc ? d.sellBtc.toFixed(6) : ""}</td><td>${d.rOutThisMonth ? formatMoneyEUR(d.rOutThisMonth, 0) : ""}</td><td>${d.btc.toFixed(6)}</td><td>${formatMoneyEUR(d.usdValue, 0)}</td></tr>`)
       .join("");
 
-    drawSimpleLineChart(
-      btcChartEl,
-      sim.data.slice(0, 240).map((d) => d.btc)
-    );
-    drawSimpleLineChart(
-      eurChartEl,
-      sim.data.slice(0, 240).map((d) => d.usdValue)
-    );
-
-    const targetROut = parseFloat(targetROutInput?.value || "0");
-    const yearsAhead = parseInt(yearsAheadInput?.value || "40", 10);
-    const sweep = [];
-    for (let y = yr; y <= yr + yearsAhead; y += 1) {
-      const result = requiredBTCAtRetirement({
-        aLower,
-        aAvg,
-        useLowerPostRetire,
-        bExp: powerLaw.bExp,
-        retire: { y, m: mr },
-        rOut: targetROut,
-      });
-      sweep.push({ year: y, btcRequired: result.btcRequired });
-    }
-
-    drawSimpleLineChart(
-      requiredChartEl,
-      sweep.map((r) => r.btcRequired)
-    );
-
-    const current = sweep[0];
-    if (requiredSummaryEl && current) {
-      requiredSummaryEl.innerHTML = `In ${yr} heb je ongeveer <strong>${current.btcRequired.toFixed(
-        4
-      )} BTC</strong> nodig om ${formatMoneyEUR(targetROut, 0)}/maand te kunnen starten.`;
-    }
+    const labels = rows.map((d) => `${d.year}-${String(d.month).padStart(2, "0")}`);
+    drawInteractiveLineChart({
+      svgEl: document.getElementById("wfl-chart-btc"),
+      tooltipEl: document.getElementById("wfl-tooltip-btc"),
+      labels,
+      values: rows.map((d) => d.btc),
+      yFormat: (v) => `${v.toFixed(6)} BTC`,
+    });
+    drawInteractiveLineChart({
+      svgEl: document.getElementById("wfl-chart-eur"),
+      tooltipEl: document.getElementById("wfl-tooltip-eur"),
+      labels,
+      values: rows.map((d) => d.usdValue),
+      yFormat: (v) => formatMoneyEUR(v, 0),
+    });
   };
 
-  [
-    yearInput,
-    monthInput,
-    initialInput,
-    routInput,
-    inflInput,
-    horizonInput,
-    percentileSelect,
-    horizonModeSelect,
-    targetROutInput,
-    yearsAheadInput,
-  ].forEach((el) => el?.addEventListener("input", update));
+  [yearInput, monthInput, initialInput, routInput, inflInput, horizonInput, percentileSelect, horizonModeSelect]
+    .forEach((el) => el?.addEventListener("input", update));
 
   update();
 }
