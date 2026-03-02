@@ -15,7 +15,6 @@ Deze calculator gebruikt de **meest recente BTC power-law fit in EUR** op basis 
   <div class="calc-grid">
     <label>Retire year<input id="wfl-retire-year" type="number" value="2030" /></label>
     <label>Retire month<input id="wfl-retire-month" type="number" value="1" min="1" max="12" /></label>
-    <label>BTC at retirement<input id="wfl-initial-btc" type="number" value="1.62" step="0.0001" /></label>
     <label>Withdrawal (€ / maand)<input id="wfl-rout" type="number" value="3000" step="100" /></label>
     <label>Horizon (years)<input id="wfl-horizon" type="number" value="25" min="1" max="120" /></label>
     <label>Inflatie (% / jaar)<input id="wfl-infl" type="number" value="2" step="0.1" /></label>

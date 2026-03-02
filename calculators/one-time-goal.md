@@ -10,6 +10,8 @@ Deze calculator berekent hoeveel BTC je nodig hebt om een **eenmalig doelbedrag*
 - **Lower** = percentiel 10 (conservatief)
 - **Avg** = percentiel 50 (gemiddeld)
 
+Daarnaast toont de calculator ook de **huidige live BTC-prijs (EUR)** en de kostprijs om de benodigde BTC **vandaag** aan te kopen voor beide scenario’s.
+
 ## Calculator
 <div class="calc-card">
   <div class="calc-grid-3">
@@ -27,18 +29,24 @@ Deze calculator berekent hoeveel BTC je nodig hebt om een **eenmalig doelbedrag*
     </label>
   </div>
 
+  <p id="otg-live-status" class="live-status">Live BTC prijs laden...</p>
+
   <div class="calc-results">
     <div class="result-box">
       <div class="calc-label">Price (lower)</div>
       <div id="otg-price-lower" class="calc-value">–</div>
       <div class="calc-label">BTC needed (lower)</div>
       <div id="otg-btc-lower" class="calc-value">–</div>
+      <div class="calc-label">Cost today (lower)</div>
+      <div id="otg-cost-lower" class="calc-value">–</div>
     </div>
     <div class="result-box">
       <div class="calc-label">Price (avg)</div>
       <div id="otg-price-avg" class="calc-value">–</div>
       <div class="calc-label">BTC needed (avg)</div>
       <div id="otg-btc-avg" class="calc-value">–</div>
+      <div class="calc-label">Cost today (avg)</div>
+      <div id="otg-cost-avg" class="calc-value">–</div>
     </div>
   </div>
 </div>
@@ -48,6 +56,7 @@ Deze calculator berekent hoeveel BTC je nodig hebt om een **eenmalig doelbedrag*
 .calc-grid-3 { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:1rem; }
 .calc-grid-3 label { display:flex; flex-direction:column; gap:.35rem; font-size:.9rem; color:#0f172a; }
 .calc-grid-3 input { padding:.45rem .6rem; border-radius:8px; border:1px solid #cbd5f5; }
+.live-status { margin-top: 1rem; color: #334155; font-size: .9rem; }
 .calc-results { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:1rem; margin-top:1.2rem; }
 .result-box { border:1px solid #cbd5e1; border-radius:12px; padding:.65rem .8rem; background:#f8fafc; }
 .calc-label { font-size:.8rem; color:#64748b; }

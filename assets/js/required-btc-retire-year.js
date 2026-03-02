@@ -56,6 +56,15 @@ function formatMoneyEUR(value) {
   return value.toLocaleString("nl-BE", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 }
 
+async function rbyFetchLiveBtcEurPrice() {
+  const response = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=eur", { cache: "no-store" });
+  if (!response.ok) throw new Error(`live prijs fout (${response.status})`);
+  const data = await response.json();
+  const price = data?.bitcoin?.eur;
+  if (!Number.isFinite(price) || price <= 0) throw new Error("ongeldige live prijs");
+  return price;
+}
+
 function initRequiredBtcCalculator() {
   const targetInput = document.getElementById("rby-target-rout");
   const yearInput = document.getElementById("rby-retire-year");
@@ -63,11 +72,14 @@ function initRequiredBtcCalculator() {
   const bandSelect = document.getElementById("rby-band");
   const rangeInput = document.getElementById("rby-year-range");
   const summaryEl = document.getElementById("rby-summary");
+  const liveStatusEl = document.getElementById("rby-live-status");
   const tableBody = document.getElementById("rby-table-body");
 
   if (!targetInput) return;
 
   const powerLaw = buildRbyPowerLaw();
+  let livePrice = null;
+  let liveError = "Live BTC prijs laden...";
 
   const update = () => {
     const targetROut = parseFloat(targetInput.value || "0");
@@ -96,9 +108,10 @@ function initRequiredBtcCalculator() {
         rOut: targetROut,
       });
 
+      const costToday = Number.isFinite(livePrice) ? result.btcRequired * livePrice : NaN;
       const row = document.createElement("tr");
       if (y === retireYear) row.classList.add("highlight");
-      row.innerHTML = `<td>${y}</td><td>${formatMoneyEUR(result.priceAtRetire)}</td><td>${result.btcRequired.toFixed(4)}</td>`;
+      row.innerHTML = `<td>${y}</td><td>${formatMoneyEUR(result.priceAtRetire)}</td><td>${result.btcRequired.toFixed(4)}</td><td>${formatMoneyEUR(costToday)}</td>`;
       tableBody.appendChild(row);
     }
 
@@ -112,10 +125,28 @@ function initRequiredBtcCalculator() {
     });
 
     summaryEl.innerHTML = `In ${retireYear} heb je ongeveer <strong>${current.btcRequired.toFixed(4)} BTC</strong> nodig om ${formatMoneyEUR(targetROut)}/maand te starten.`;
+
+    if (liveStatusEl) {
+      liveStatusEl.textContent = Number.isFinite(livePrice)
+        ? `Live BTC prijs: ${formatMoneyEUR(livePrice)}`
+        : `Live BTC prijs niet beschikbaar (${liveError}).`;
+    }
   };
 
   [targetInput, yearInput, monthInput, bandSelect, rangeInput].forEach((el) => el.addEventListener("input", update));
   update();
+
+  rbyFetchLiveBtcEurPrice()
+    .then((price) => {
+      livePrice = price;
+      liveError = "";
+      update();
+    })
+    .catch((err) => {
+      livePrice = null;
+      liveError = err?.message || "onbekende fout";
+      update();
+    });
 }
 
 document.addEventListener("DOMContentLoaded", initRequiredBtcCalculator);

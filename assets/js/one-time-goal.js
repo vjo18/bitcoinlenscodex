@@ -88,6 +88,15 @@ function buildOneTimeGoalPowerLawParams() {
   };
 }
 
+async function otgFetchLiveBtcEurPrice() {
+  const response = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=eur", { cache: "no-store" });
+  if (!response.ok) throw new Error(`live prijs fout (${response.status})`);
+  const data = await response.json();
+  const price = data?.bitcoin?.eur;
+  if (!Number.isFinite(price) || price <= 0) throw new Error("ongeldige live prijs");
+  return price;
+}
+
 function initOneTimeGoalCalculator() {
   const yearInput = document.getElementById("otg-year");
   const monthInput = document.getElementById("otg-month");
@@ -97,10 +106,15 @@ function initOneTimeGoalCalculator() {
   const avgPriceEl = document.getElementById("otg-price-avg");
   const lowerBtcEl = document.getElementById("otg-btc-lower");
   const avgBtcEl = document.getElementById("otg-btc-avg");
+  const lowerCostEl = document.getElementById("otg-cost-lower");
+  const avgCostEl = document.getElementById("otg-cost-avg");
+  const liveStatusEl = document.getElementById("otg-live-status");
 
   if (!yearInput) return;
 
   const params = buildOneTimeGoalPowerLawParams();
+  let livePrice = null;
+  let liveError = "Live BTC prijs laden...";
 
   const update = () => {
     const year = parseInt(yearInput.value || "0", 10);
@@ -109,11 +123,21 @@ function initOneTimeGoalCalculator() {
 
     const priceLower = pricePLDays(params.aP10, params.bExp, year, month);
     const priceAvg = pricePLDays(params.aP50, params.bExp, year, month);
+    const btcLower = eurNeeded / priceLower;
+    const btcAvg = eurNeeded / priceAvg;
 
     lowerPriceEl.textContent = formatMoneyEUR(priceLower, 0);
     avgPriceEl.textContent = formatMoneyEUR(priceAvg, 0);
-    lowerBtcEl.textContent = `${(eurNeeded / priceLower).toFixed(6)} BTC`;
-    avgBtcEl.textContent = `${(eurNeeded / priceAvg).toFixed(6)} BTC`;
+    lowerBtcEl.textContent = `${btcLower.toFixed(6)} BTC`;
+    avgBtcEl.textContent = `${btcAvg.toFixed(6)} BTC`;
+    lowerCostEl.textContent = formatMoneyEUR(Number.isFinite(livePrice) ? btcLower * livePrice : NaN, 0);
+    avgCostEl.textContent = formatMoneyEUR(Number.isFinite(livePrice) ? btcAvg * livePrice : NaN, 0);
+
+    if (liveStatusEl) {
+      liveStatusEl.textContent = Number.isFinite(livePrice)
+        ? `Live BTC prijs: ${formatMoneyEUR(livePrice, 0)}`
+        : `Live BTC prijs niet beschikbaar (${liveError}).`;
+    }
   };
 
   [yearInput, monthInput, eurInput].forEach((el) =>
@@ -121,6 +145,18 @@ function initOneTimeGoalCalculator() {
   );
 
   update();
+
+  otgFetchLiveBtcEurPrice()
+    .then((price) => {
+      livePrice = price;
+      liveError = "";
+      update();
+    })
+    .catch((err) => {
+      livePrice = null;
+      liveError = err?.message || "onbekende fout";
+      update();
+    });
 }
 
 document.addEventListener("DOMContentLoaded", initOneTimeGoalCalculator);

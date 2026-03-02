@@ -1,11 +1,13 @@
 ---
 layout: page
-title: "Required BTC vs Retire Year"
+title: "Required BTC for retirement"
 permalink: /calculators/required-btc-retire-year/
 ---
 
 ## Doel
 Deze calculator toont hoeveel BTC je nodig hebt om met een **maandelijkse uitkering (r_out)** te starten op een bepaald pensioenjaar, met projectie over een gekozen aantal jaren in de toekomst.
+
+Daarnaast toont de tabel ook de **kost vandaag (live EUR)** om die benodigde BTC nu aan te kopen.
 
 ## Calculator
 <div class="calc-card">
@@ -36,6 +38,7 @@ Deze calculator toont hoeveel BTC je nodig hebt om met een **maandelijkse uitker
   </div>
 
   <p id="rby-summary" class="calc-summary"></p>
+  <p id="rby-live-status" class="calc-live"></p>
 
   <div class="calc-table">
     <table>
@@ -44,6 +47,7 @@ Deze calculator toont hoeveel BTC je nodig hebt om met een **maandelijkse uitker
           <th>Retire year</th>
           <th>Prijs (EUR)</th>
           <th>BTC nodig</th>
+          <th>Kost vandaag (live EUR)</th>
         </tr>
       </thead>
       <tbody id="rby-table-body"></tbody>
@@ -56,7 +60,8 @@ Deze calculator toont hoeveel BTC je nodig hebt om met een **maandelijkse uitker
 .calc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
 .calc-grid label { display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.9rem; color: #0f172a; }
 .calc-grid input,.calc-grid select { padding: 0.45rem 0.6rem; border-radius: 8px; border: 1px solid #cbd5f5; }
-.calc-summary { margin: 1rem 0; font-weight: 600; }
+.calc-summary { margin: 1rem 0 .5rem; font-weight: 600; }
+.calc-live { margin: 0 0 1rem; color:#334155; }
 .calc-table table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 .calc-table th,.calc-table td { border-bottom: 1px solid #e2e8f0; padding: 0.5rem 0.25rem; text-align: left; }
 .calc-table tr.highlight { background: rgba(37, 99, 235, 0.08); font-weight: 600; }
