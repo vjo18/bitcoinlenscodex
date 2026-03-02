@@ -9,8 +9,6 @@ Hier vind je een overzicht van de calculators die verschillende toepassingen ron
 
 - [Required BTC vs Retire Year]({{ '/calculators/required-btc-retire-year/' | relative_url }})
 - [One-time Goal Calculator]({{ '/calculators/one-time-goal/' | relative_url }})
-- [Max Affordable r_out]({{ '/calculators/max-affordable-rout/' | relative_url }})
-- [BTC Price Projection]({{ '/calculators/btc-price-projection/' | relative_url }})
-- [Financial Freedom Year]({{ '/calculators/financial-freedom-year/' | relative_url }})
 - [Inflation Effect]({{ '/calculators/inflation-effect/' | relative_url }})
 - [BTC Win-for-Life (EUR)]({{ '/calculators/btc-win-for-life/' | relative_url }})
+- [BTC Win-for-Life Live Price (EUR)]({{ '/calculators/btc-win-for-life-live-price/' | relative_url }})
