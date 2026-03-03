@@ -5,7 +5,7 @@ permalink: /calculators/inflation-effect/
 ---
 
 ## Doel
-Deze calculator laat zien hoe **inflatie** bedragen vertaalt tussen verleden, heden en toekomst.
+Deze calculator laat zien hoe **inflatie** bedragen vertaalt tussen heden en toekomst.
 
 ## Calculator
 <div class="calc-card">
@@ -15,7 +15,7 @@ Deze calculator laat zien hoe **inflatie** bedragen vertaalt tussen verleden, he
       <input id="inf-base" type="number" value="6000" step="100" />
     </label>
     <label>
-      Jaren (afstand)
+      Jaren (projectie)
       <input id="inf-years" type="number" value="10" min="1" />
     </label>
     <label>
@@ -33,9 +33,22 @@ Deze calculator laat zien hoe **inflatie** bedragen vertaalt tussen verleden, he
       <div class="calc-label">Reële waarde in de toekomst van € vandaag (koopkracht)</div>
       <div id="inf-future-real" class="calc-value">–</div>
     </div>
-    <div class="result-box">
-      <div class="calc-label">Equivalent bedrag in het verleden (x jaar geleden)</div>
-      <div id="inf-past-equiv" class="calc-value">–</div>
+  </div>
+
+  <div class="chart-grid">
+    <div class="chart-card">
+      <h4>Nominale evolutie</h4>
+      <div class="chart-wrap">
+        <svg id="inf-chart-nominal" viewBox="0 0 560 260" role="img" aria-label="Nominale evolutie"></svg>
+        <div id="inf-tooltip-nominal" class="chart-tooltip"></div>
+      </div>
+    </div>
+    <div class="chart-card">
+      <h4>Reële evolutie (in euro's van vandaag)</h4>
+      <div class="chart-wrap">
+        <svg id="inf-chart-real" viewBox="0 0 560 260" role="img" aria-label="Reële evolutie"></svg>
+        <div id="inf-tooltip-real" class="chart-tooltip"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -49,6 +62,12 @@ Deze calculator laat zien hoe **inflatie** bedragen vertaalt tussen verleden, he
 .result-box { border:1px solid #cbd5e1; border-radius:12px; padding:.75rem; background:#f8fafc; }
 .calc-label { font-size: 0.85rem; color: #64748b; }
 .calc-value { font-size: 1.2rem; font-weight: 600; }
+.chart-grid { margin-top: 1.2rem; display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:1rem; }
+.chart-card { border:1px solid #cbd5e1; border-radius:12px; padding:.75rem; background:#fff; }
+.chart-card h4 { margin: 0 0 .5rem; font-size: .95rem; }
+.chart-wrap { position: relative; }
+.chart-wrap svg { width: 100%; height: auto; display: block; }
+.chart-tooltip { position: absolute; display:none; pointer-events:none; background:#0f172a; color:#fff; padding:4px 8px; border-radius:6px; font-size:12px; white-space: nowrap; }
 </style>
 
 <script src="{{ '/assets/js/inflation-effect.js' | relative_url }}"></script>
