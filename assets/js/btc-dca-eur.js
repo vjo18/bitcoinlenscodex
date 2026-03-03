@@ -64,6 +64,15 @@ function dcaMoneyEUR(value, decimals = 0) {
   return value.toLocaleString("nl-BE", { style: "currency", currency: "EUR", maximumFractionDigits: decimals });
 }
 
+async function dcaFetchLiveBtcEurPrice() {
+  const response = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=eur", { cache: "no-store" });
+  if (!response.ok) throw new Error(`live prijs fout (${response.status})`);
+  const data = await response.json();
+  const price = data?.bitcoin?.eur;
+  if (!Number.isFinite(price) || price <= 0) throw new Error("ongeldige live prijs");
+  return price;
+}
+
 function dcaSelectA(params, band) {
   if (band === "p40") return params.aP40;
   if (band === "p60") return params.aP60;
@@ -90,10 +99,13 @@ function initBtcDcaEurCalculator() {
   const targetHorizonInput = document.getElementById("dca-target-horizon-years");
   const band2Input = document.getElementById("dca-band-opt2");
   const opt2Result = document.getElementById("dca-opt2-result");
+  const liveStatusEl = document.getElementById("dca-live-status");
 
   if (!lumpInput) return;
 
   const params = buildDcaPowerLaw();
+  let livePrice = null;
+  let liveError = "Live BTC prijs laden...";
 
   const update = () => {
     const now = new Date();
@@ -127,8 +139,7 @@ function initBtcDcaEurCalculator() {
     const aUsedOpt2 = dcaSelectA(params, band2);
     const pathOpt2 = dcaMonthSequence(currentYear, currentMonth, targetHorizonMonths);
 
-    const currentPrice = pricePLDays(aUsedOpt2, params.bExp, currentYear, currentMonth);
-    const oneTimeOnly = targetBtc * currentPrice;
+    const oneTimeOnly = Number.isFinite(livePrice) ? targetBtc * livePrice : NaN;
 
     let btcPerEuroViaMonthly = 0;
     for (const ym of pathOpt2) {
@@ -138,13 +149,31 @@ function initBtcDcaEurCalculator() {
     const monthlyOnly = btcPerEuroViaMonthly > 0 ? targetBtc / btcPerEuroViaMonthly : NaN;
 
     const targetEndYm = addMonths({ y: currentYear, m: currentMonth }, targetHorizonMonths - 1);
-    opt2Result.innerHTML = `Voor <strong>${targetBtc.toFixed(6)} BTC</strong> tegen ${targetEndYm.m}/${targetEndYm.y}: <strong>${dcaMoneyEUR(oneTimeOnly)}</strong> eenmalig vandaag (zonder maandelijkse inleg), of <strong>${dcaMoneyEUR(monthlyOnly)}</strong> per maand vanaf vandaag (zonder eenmalige inleg).`;
+    opt2Result.innerHTML = `Voor <strong>${targetBtc.toFixed(6)} BTC</strong> tegen ${targetEndYm.m}/${targetEndYm.y}: <strong>${dcaMoneyEUR(oneTimeOnly)}</strong> eenmalig vandaag (op basis van live BTC-prijs, zonder maandelijkse inleg), of <strong>${dcaMoneyEUR(monthlyOnly)}</strong> per maand vanaf vandaag (zonder eenmalige inleg).`;
+
+    if (liveStatusEl) {
+      liveStatusEl.textContent = Number.isFinite(livePrice)
+        ? `Live BTC prijs: ${dcaMoneyEUR(livePrice)}`
+        : `Live BTC prijs niet beschikbaar (${liveError}).`;
+    }
   };
 
   [lumpInput, monthlyInput, horizonInput, band1Input, targetInput, targetHorizonInput, band2Input]
     .forEach((el) => el.addEventListener("input", update));
 
   update();
+
+  dcaFetchLiveBtcEurPrice()
+    .then((price) => {
+      livePrice = price;
+      liveError = "";
+      update();
+    })
+    .catch((err) => {
+      livePrice = null;
+      liveError = err?.message || "onbekende fout";
+      update();
+    });
 }
 
 document.addEventListener("DOMContentLoaded", initBtcDcaEurCalculator);

@@ -60,6 +60,7 @@ Deze calculator gebruikt de **BTC power law in EUR** om je DCA-plan te schatten 
     </label>
   </div>
   <p id="dca-opt2-result" class="calc-summary"></p>
+  <p id="dca-live-status" class="calc-live-note"></p>
   <p class="calc-live-note">De resultaten zijn modelprojecties op basis van de power law (geen financieel advies).</p>
 </div>
 
