@@ -12,3 +12,4 @@ Hier vind je een overzicht van de calculators die verschillende toepassingen ron
 - [One-time Goal Calculator]({{ '/calculators/one-time-goal/' | relative_url }})
 - [Inflation Effect]({{ '/calculators/inflation-effect/' | relative_url }})
 - [BTC Win-for-Life (EUR)]({{ '/calculators/btc-win-for-life/' | relative_url }})
+- [BTC DCA Calculator (EUR)]({{ '/calculators/btc-dca-eur/' | relative_url }})
