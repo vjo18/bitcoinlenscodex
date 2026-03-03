@@ -377,9 +377,17 @@ let priceChart = null;
 let slopeChart = null;
 let r2Chart = null;
 let oscillatorChart = null;
+let livePulseIntervalId = null;
+
+function stopLivePulse() {
+  if (livePulseIntervalId) {
+    clearInterval(livePulseIntervalId);
+    livePulseIntervalId = null;
+  }
+}
 
 // hoofdchart met X/Y log-toggle + jaartallen op de x-as
-function createPriceChart(ctx, yLog, xLog, priceData) {
+function createPriceChart(ctx, yLog, xLog, priceData, livePoint = null) {
   const pointsMarket = [];
   const pointsAvg = [];
   const quantilePoints = QUANTILE_LEVELS.reduce((acc, level) => {
@@ -409,6 +417,7 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
   const minDays = firstWithPrice ? firstWithPrice.x : 1;
 
   if (priceChart) {
+    stopLivePulse();
     priceChart.destroy();
   }
 
@@ -443,6 +452,25 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
     order: 0,
   }));
 
+  const liveDataset = livePoint
+    ? {
+      label: livePoint.isLive ? "Live BTC prijs (EUR)" : "Laatste BTC close (EUR)",
+      data: [{ x: livePoint.x, y: livePoint.y, date: livePoint.date, isLive: !!livePoint.isLive }],
+      showLine: false,
+      pointBackgroundColor: "#ef4444",
+      pointBorderColor: "#ffffff",
+      pointBorderWidth: 1.5,
+      pointHoverRadius: 7,
+      pointRadius: (context) => {
+        if (!context?.raw?.isLive) return 4;
+        const t = Date.now() / 280;
+        return 4 + Math.max(0, Math.sin(t)) * 4;
+      },
+      parsing: false,
+      order: 4,
+    }
+    : null;
+
   priceChart = new Chart(ctx, {
     type: "line",
     data: {
@@ -470,6 +498,7 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
           parsing: false,
           order: 3,
         },
+        ...(liveDataset ? [liveDataset] : []),
       ],
     },
     options: {
@@ -549,6 +578,12 @@ function createPriceChart(ctx, yLog, xLog, priceData) {
     },
 
   });
+
+  if (livePoint?.isLive && priceChart) {
+    livePulseIntervalId = setInterval(() => {
+      if (priceChart) priceChart.update("none");
+    }, 110);
+  }
 
 // Double-click reset zoom (alleen op de price chart canvas)
 const canvas = priceChart?.canvas;
@@ -930,6 +965,23 @@ document.addEventListener("DOMContentLoaded", () => {
   if (yLogToggle) useYLog = !!yLogToggle.checked;
   if (xLogToggle) useXLog = !!xLogToggle.checked;
 
+  // KPI-balk invullen + startpunt voor live marker
+  const sorted = [...btcMonthlyCloses].sort((a, b) =>
+    a.date < b.date ? -1 : 1
+  );
+  const lastRow = sorted[sorted.length - 1];
+  let livePoint = null;
+
+  if (lastRow) {
+    setKpiText("kpi-last-close", formatMoneyEUR(lastRow.price));
+    livePoint = {
+      x: daysSinceGenesisFromDateStr(lastRow.date),
+      y: Number(lastRow.price),
+      date: lastRow.date,
+      isLive: false,
+    };
+  }
+
   const filterPriceDataByYear = (yearLimit) =>
     priceData.filter((row) => {
       const year = new Date(row.date + "T00:00:00Z").getUTCFullYear();
@@ -944,11 +996,19 @@ document.addEventListener("DOMContentLoaded", () => {
     const year = Number(yearValue);
     if (!Number.isFinite(year)) return;
     if (projectionValue) projectionValue.textContent = year.toString();
+
+    const filtered = filterPriceDataByYear(year);
+    const livePointForYear =
+      livePoint && new Date(livePoint.date + "T00:00:00Z").getUTCFullYear() <= year
+        ? livePoint
+        : null;
+
     createPriceChart(
       priceCtx,
       useYLog,
       useXLog,
-      filterPriceDataByYear(year)
+      filtered,
+      livePointForYear
     );
 
   };
@@ -959,23 +1019,20 @@ document.addEventListener("DOMContentLoaded", () => {
   createSlopeChart(slopeCtx, rollingFits);
   createR2Chart(r2Ctx, rollingFits);
 
-  // KPI-balk invullen
-  const sorted = [...btcMonthlyCloses].sort((a, b) =>
-    a.date < b.date ? -1 : 1
-  );
-  const lastRow = sorted[sorted.length - 1];
-
-  if (lastRow) {
-    setKpiText("kpi-last-close", formatMoneyEUR(lastRow.price));
-  }
-
-    // Probeer live BTCEUR prijs op te halen (overschrijft laatste close als het lukt)
+  // Probeer live BTCEUR prijs op te halen (overschrijft laatste close als het lukt)
   fetchLiveBtceur().then((livePrice) => {
     if (livePrice !== null) {
       setKpiText("kpi-last-close", formatMoneyEUR(livePrice));
+      const todayIso = new Date().toISOString().slice(0, 10);
+      livePoint = {
+        x: daysSinceGenesisFromDateStr(todayIso),
+        y: livePrice,
+        date: todayIso,
+        isLive: true,
+      };
+      setProjectionYear(projectionSlider ? projectionSlider.value : maxProjectionYear);
     }
   });
-
 
 
   setKpiText(
