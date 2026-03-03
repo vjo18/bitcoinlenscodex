@@ -70,6 +70,9 @@ Deze calculator gebruikt de **BTC power law in EUR** om je DCA-plan te schatten 
 .calc-grid label { display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.9rem; color: #0f172a; }
 .calc-grid input,.calc-grid select { padding: 0.45rem 0.6rem; border-radius: 8px; border: 1px solid #cbd5f5; }
 .calc-summary { margin: 1rem 0 .25rem; font-weight: 600; }
+.calc-result-list { margin: .5rem 0 0 1.1rem; padding: 0; }
+.calc-result-list li { margin: .35rem 0; }
+.calc-note { color: #475569; font-weight: 400; }
 .calc-divider { margin: 1.25rem 0; border: 0; border-top: 1px solid #e2e8f0; }
 .calc-live-note { margin: .5rem 0 0; color: #475569; font-size: .9rem; }
 </style>

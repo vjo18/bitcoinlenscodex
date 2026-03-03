@@ -147,9 +147,16 @@ function initBtcDcaEurCalculator() {
       btcPerEuroViaMonthly += 1 / price;
     }
     const monthlyOnly = btcPerEuroViaMonthly > 0 ? targetBtc / btcPerEuroViaMonthly : NaN;
+    const monthlyOnlyTotalInvested = Number.isFinite(monthlyOnly) ? monthlyOnly * targetHorizonMonths : NaN;
 
     const targetEndYm = addMonths({ y: currentYear, m: currentMonth }, targetHorizonMonths - 1);
-    opt2Result.innerHTML = `Voor <strong>${targetBtc.toFixed(6)} BTC</strong> tegen ${targetEndYm.m}/${targetEndYm.y}: <strong>${dcaMoneyEUR(oneTimeOnly)}</strong> eenmalig vandaag (op basis van live BTC-prijs, zonder maandelijkse inleg), of <strong>${dcaMoneyEUR(monthlyOnly)}</strong> per maand vanaf vandaag (zonder eenmalige inleg).`;
+    opt2Result.innerHTML = `
+      <strong>Voor ${targetBtc.toFixed(6)} BTC tegen ${targetEndYm.m}/${targetEndYm.y}</strong>
+      <ul class="calc-result-list">
+        <li><strong>Eenmalig vandaag:</strong> ${dcaMoneyEUR(oneTimeOnly)} <span class="calc-note">(op basis van live BTC-prijs, zonder maandelijkse inleg)</span></li>
+        <li><strong>Maandelijks vanaf vandaag:</strong> ${dcaMoneyEUR(monthlyOnly)} per maand <span class="calc-note">(totaal ingelegd: ${dcaMoneyEUR(monthlyOnlyTotalInvested)} tegen einde projectie, zonder eenmalige inleg)</span></li>
+      </ul>
+    `;
 
     if (liveStatusEl) {
       liveStatusEl.textContent = Number.isFinite(livePrice)
