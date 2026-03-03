@@ -70,8 +70,6 @@ async function brhFetchLivePrice() {
 
 function initBtcRetirementHorizon() {
   const btcInput = document.getElementById("brh-btc");
-  const yearInput = document.getElementById("brh-retire-year");
-  const monthInput = document.getElementById("brh-retire-month");
   const rangeInput = document.getElementById("brh-year-range");
   const inflInput = document.getElementById("brh-inflation");
   const bandSelect = document.getElementById("brh-band");
@@ -87,21 +85,22 @@ function initBtcRetirementHorizon() {
 
   const update = () => {
     const initialBtc = parseFloat(btcInput.value || "0");
-    const retireYear = parseInt(yearInput.value || "0", 10);
-    const retireMonth = clampMonth(parseInt(monthInput.value || "1", 10));
+    const retireYear = new Date().getFullYear();
+    const retireMonth = 1;
     const yearRange = Math.max(1, parseInt(rangeInput.value || "40", 10));
     const inflAnnual = (parseFloat(inflInput.value || "0") || 0) / 100;
     const useLower = bandSelect.value === "lower";
 
     tableBody.innerHTML = "";
 
-    if (!Number.isFinite(retireYear) || retireYear <= 0 || !Number.isFinite(initialBtc) || initialBtc <= 0) {
-      summaryEl.textContent = "Vul een geldig pensioenjaar en BTC-hoeveelheid in.";
+    if (!Number.isFinite(initialBtc) || initialBtc <= 0) {
+      summaryEl.textContent = "Vul een geldige BTC-hoeveelheid in.";
       return;
     }
 
     const aAvg = powerLaw.aP50;
     const aLower = powerLaw.aP10;
+    const projectionEndYear = retireYear + yearRange;
 
     for (let y = retireYear; y <= retireYear + yearRange; y += 1) {
       const priceAtRetire = pricePLDays(useLower ? aLower : aAvg, powerLaw.bExp, y, retireMonth);
@@ -117,10 +116,17 @@ function initBtcRetirementHorizon() {
         finiteHorizonMode: false,
       });
 
-      const costToday = Number.isFinite(livePrice) ? initialBtc * livePrice : NaN;
+      const payoutYears = projectionEndYear - y + 1;
+      const totalPayout = payoutYears <= 0
+        ? 0
+        : maxRout * 12 * (
+          inflAnnual === 0
+            ? payoutYears
+            : (Math.pow(1 + inflAnnual, payoutYears) - 1) / inflAnnual
+        );
       const row = document.createElement("tr");
       if (y === retireYear) row.classList.add("highlight");
-      row.innerHTML = `<td>${y}</td><td>${brhMoneyEUR(priceAtRetire)}</td><td>${brhMoneyEUR(maxRout)}/maand</td><td>${brhMoneyEUR(costToday)}</td>`;
+      row.innerHTML = `<td>${y}</td><td>${brhMoneyEUR(priceAtRetire)}</td><td>${brhMoneyEUR(maxRout)}/maand</td><td>${brhMoneyEUR(totalPayout)}</td>`;
       tableBody.appendChild(row);
     }
 
@@ -138,12 +144,13 @@ function initBtcRetirementHorizon() {
 
     summaryEl.innerHTML = `Met <strong>${initialBtc.toFixed(4)} BTC</strong> kan je vanaf ${retireYear} ongeveer <strong>${brhMoneyEUR(currentRout)}/maand</strong> opnemen (geïndexeerd met inflatie).`;
 
+    const costToday = Number.isFinite(livePrice) ? brhMoneyEUR(initialBtc * livePrice) : "-";
     liveStatusEl.textContent = Number.isFinite(livePrice)
-      ? `Live BTC prijs: ${brhMoneyEUR(livePrice)}`
+      ? `Live BTC prijs: ${brhMoneyEUR(livePrice)} • Kost vandaag (live EUR): ${costToday}`
       : `Live BTC prijs niet beschikbaar (${liveError}).`;
   };
 
-  [btcInput, yearInput, monthInput, rangeInput, inflInput, bandSelect].forEach((el) => el.addEventListener("input", update));
+  [btcInput, rangeInput, inflInput, bandSelect].forEach((el) => el.addEventListener("input", update));
   update();
 
   brhFetchLivePrice()

@@ -15,14 +15,6 @@ Deze calculator vertrekt van een **beschikbare hoeveelheid BTC** en projecteert 
       <input id="brh-btc" type="number" value="1.5" step="0.01" min="0" />
     </label>
     <label>
-      Start retire year
-      <input id="brh-retire-year" type="number" value="2030" />
-    </label>
-    <label>
-      Retire month
-      <input id="brh-retire-month" type="number" value="1" min="1" max="12" />
-    </label>
-    <label>
       Projectie in jaren
       <input id="brh-year-range" type="number" value="40" min="1" max="80" />
     </label>
@@ -49,7 +41,7 @@ Deze calculator vertrekt van een **beschikbare hoeveelheid BTC** en projecteert 
           <th>Retire year</th>
           <th>Prijs (EUR)</th>
           <th>Maandelijkse uitkering (forever)</th>
-          <th>Kost vandaag (live EUR)</th>
+          <th>Totaal uitgekeerd van startjaar tot einde projectie</th>
         </tr>
       </thead>
       <tbody id="brh-table-body"></tbody>
