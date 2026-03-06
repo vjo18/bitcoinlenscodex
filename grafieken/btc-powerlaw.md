@@ -15,6 +15,10 @@ permalink: /grafieken/btc-powerlaw/
   De bijkomende Quantile Oscillator normaliseert de huidige prijspositie binnen deze bandstructuur.
 </p>
 
+> Data-update tip: je kan maandelijkse BTCEUR-closes automatisch ophalen met:
+> `python tools/update_btceur_monthly_closes.py --write`
+> (gebruikt CoinGecko daily data en neemt enkel afgesloten maanden).
+
 <div class="btc-kpi-row">
   <div class="btc-kpi-card">
     <div class="btc-kpi-label">Live BTC</div>
